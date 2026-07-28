@@ -64,8 +64,7 @@ window.openChatView = function (name) {
   document.getElementById("wx-reply-input").value = "";
   document.getElementById("wx-reply-input").style.height = "auto";
 
-  const hasPortrait = !!window.getPortraitUrl(name, data.性别);
-  const portraitUrl = hasPortrait ? window.getPortraitUrl(name, data.性别) : "";
+  const portraitUrl = window.getPortraitUrl(name, data.性别) || "";
   if (portraitUrl) {
     document.getElementById("wx-chat-bg").style.backgroundImage =
       `url('${portraitUrl}')`;
@@ -465,14 +464,15 @@ window.populateCharacterData = function() {
     const exp = parseFloat(data.修为) || 0;
     const daoxin = parseFloat(data.道心) || 0;
     const loyalty = parseFloat(data.亲密) || 0;
-    const hasPortrait = !!window.getPortraitUrl(name, data.性别);
+    const portraitUrl = window.getPortraitUrl(name, data.性别);
+    const hasPortrait = !!portraitUrl;
     const portraitSection = `
                 <div class="card-collapse-body"><div class="portrait-wrapper">
                     <div class="portrait-actions">
                     ${hasPortrait ? `<div class="portrait-toggle-btn" onclick="const p = this.parentElement.nextElementSibling; const img = p.querySelector('img'); if(!img.src) { img.src = img.dataset.src; } p.classList.toggle('show'); this.innerHTML = p.classList.contains('show') ? '收起立绘 ▲' : '查看立绘 ▼';">查看立绘 ▼</div>` : `<div class="portrait-toggle-btn" style="opacity:0.75;" onclick="event.stopPropagation(); window.showMissingPortraitDialog('${name}');" title="配置或获取角色立绘">暂无立绘</div>`}
                     <div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog('${name}');" title="设置立绘">🎨</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.switchPortrait('${name}');" title="切换立绘">🔄</div>${renderDaoyuanApplause(name)}
                 </div>
-                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${window.getPortraitUrl(name, data.性别)}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
+                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${portraitUrl}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
                 </div></div>`;
 
     const safePartnerName = String(name).replace(/"/g, '"');
@@ -520,14 +520,15 @@ window.populateCharacterData = function() {
     const exp = parseFloat(data.修为) || 0;
     const daoxin = parseFloat(data.道心) || 0;
     const relation = parseFloat(data.好感) || 0;
-    const hasPortrait = !!window.getPortraitUrl(name, data.性别);
+    const portraitUrl = window.getPortraitUrl(name, data.性别);
+    const hasPortrait = !!portraitUrl;
     const portraitSection = `
                 <div class="card-collapse-body"><div class="portrait-wrapper">
                     <div class="portrait-actions">
                     ${hasPortrait ? `<div class="portrait-toggle-btn" onclick="const p = this.parentElement.nextElementSibling; const img = p.querySelector('img'); if(!img.src) { img.src = img.dataset.src; } p.classList.toggle('show'); this.innerHTML = p.classList.contains('show') ? '收起立绘 ▲' : '查看立绘 ▼';">查看立绘 ▼</div>` : `<div class="portrait-toggle-btn" style="opacity:0.75;" onclick="event.stopPropagation(); window.showMissingPortraitDialog('${name}');" title="配置或获取角色立绘">暂无立绘</div>`}
                     <div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog('${name}');" title="设置立绘">🎨</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.switchPortrait('${name}');" title="切换立绘">🔄</div>${renderDaoyuanApplause(name)}
                 </div>
-                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${window.getPortraitUrl(name, data.性别)}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
+                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${portraitUrl}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
                 </div></div>`;
 
     const safeNpcName = String(name).replace(/"/g, '"');
@@ -573,14 +574,15 @@ window.populateCharacterData = function() {
     const mp = parseFloat(data.灵力) || 0;
     const exp = parseFloat(data.修为) || 0;
     const loyalty = parseFloat(data.亲密度) || 0;
-    const hasPortrait = !!window.getPortraitUrl(name, data.性别);
+    const portraitUrl = window.getPortraitUrl(name, data.性别);
+    const hasPortrait = !!portraitUrl;
     const portraitSection = `
                 <div class="card-collapse-body"><div class="portrait-wrapper">
                     <div class="portrait-actions portrait-actions--two">
                     ${hasPortrait ? `<div class="portrait-toggle-btn" onclick="const p = this.parentElement.nextElementSibling; const img = p.querySelector('img'); if(!img.src) { img.src = img.dataset.src; } p.classList.toggle('show'); this.innerHTML = p.classList.contains('show') ? '收起立绘 ▲' : '查看立绘 ▼';">查看立绘 ▼</div>` : `<div class="portrait-toggle-btn" style="opacity:0.75;" onclick="event.stopPropagation(); window.showMissingPortraitDialog('${name}');" title="配置或获取角色立绘">暂无立绘</div>`}
                     <div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog('${name}');" title="设置立绘">🎨</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.switchPortrait('${name}');" title="切换立绘">🔄</div>
                 </div>
-                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${window.getPortraitUrl(name, data.性别)}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
+                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${portraitUrl}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
                 </div></div>`;
 
     const safePetName = String(name).replace(/"/g, '"');
@@ -673,14 +675,15 @@ window.populateCharacterData = function() {
     (a, b) => (a[1].排名 || 999) - (b[1].排名 || 999),
   );
   sortedBeauties.slice(0, 2).forEach(([name, data]) => {
-    const hasPortrait = !!window.getPortraitUrl(name, data.性别);
+    const portraitUrl = window.getPortraitUrl(name, data.性别);
+    const hasPortrait = !!portraitUrl;
     const portraitSection = `
                 <div class="portrait-wrapper">
                     <div class="portrait-actions">
                     ${hasPortrait ? `<div class="portrait-toggle-btn" onclick="const p = this.parentElement.nextElementSibling; const img = p.querySelector('img'); if(!img.src) { img.src = img.dataset.src; } p.classList.toggle('show'); this.innerHTML = p.classList.contains('show') ? '收起立绘 ▲' : '查看立绘 ▼';">查看立绘 ▼</div>` : `<div class="portrait-toggle-btn" style="opacity:0.75;" onclick="event.stopPropagation(); window.showMissingPortraitDialog('${name}');" title="配置或获取角色立绘">暂无立绘</div>`}
                     <div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog('${name}');" title="设置立绘">🎨</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.switchPortrait('${name}');" title="切换立绘">🔄</div>${renderDaoyuanApplause(name)}
                 </div>
-                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${window.getPortraitUrl(name, data.性别)}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
+                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${portraitUrl}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
                 </div>`;
 
     const safeBeautyName = String(name).replace(/"/g, '"');
@@ -739,10 +742,9 @@ window.populateCharacterData = function() {
   );
 
   Object.entries(messages).forEach(([name, data]) => {
-    const hasPortrait = !!window.getPortraitUrl(name, data.性别);
-    const portraitUrl = hasPortrait
-      ? window.getPortraitUrl(name, data.性别)
-      : "https://via.placeholder.com/50/000000/FFFFFF/?text=?";
+    const portraitUrl =
+      window.getPortraitUrl(name, data.性别) ||
+      "https://via.placeholder.com/50/000000/FFFFFF/?text=?";
 
     /* 获取最后一条消息预览并判断未读红点 */
     const historyKeys = Object.keys(data.历史记录 || {});

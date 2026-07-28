@@ -21,6 +21,28 @@ function getPortraitStorage() {
   return window.DaoyuanStatusStorage || window.localStorage;
 }
 
+const portraitJsonReadCache = new Map();
+
+function readCachedPortraitJson(key, fallback = {}) {
+  try {
+    const saved = getPortraitStorage().getItem(key);
+    const cached = portraitJsonReadCache.get(key);
+    if (cached && cached.raw === saved) return cached.value;
+    if (!saved) {
+      portraitJsonReadCache.set(key, { raw: saved, value: fallback });
+      return fallback;
+    }
+    const parsed = JSON.parse(saved);
+    const value =
+      typeof parsed === "object" && parsed !== null ? parsed : fallback;
+    portraitJsonReadCache.set(key, { raw: saved, value });
+    return value;
+  } catch (e) {
+    console.warn("[道渊] 读取立绘本地数据失败:", key, e);
+    return fallback;
+  }
+}
+
 function readPortraitJson(key, fallback = {}) {
   try {
     const saved = getPortraitStorage().getItem(key);
@@ -137,7 +159,12 @@ function getPortraitIndexState() {
 
 function getPortraitIndex(name, mode, length) {
   if (length <= 0) return 0;
-  const state = getPortraitIndexState();
+  const savedState = readCachedPortraitJson(PORTRAIT_INDEX_KEY, {});
+  const state = {
+    normal: savedState.normal || {},
+    female: savedState.female || {},
+    special: savedState.special || {},
+  };
   const stored = Number(state[mode][name]);
   return Number.isInteger(stored) && stored >= 0 ? stored % length : 0;
 }
@@ -853,21 +880,21 @@ window.injectHeartButtons = function () {
 };
 
 /* 获取立绘URL（支持多图切换和玉简同步） */
-window.getPortraitUrl = function(name, gender) {
-  try {
-    const saved = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
-    if (saved) {
-      const cp = JSON.parse(saved);
-      if (cp[name]) return getIndexedPortrait(cp[name], name, "normal");
-    }
-  } catch (e) {}
+window.getPortraitUrl = function (name, gender) {
+  const customPortraits = readCachedPortraitJson(
+    PORTRAIT_CUSTOM_KEYS.normal,
+    {},
+  );
+  if (customPortraits[name]) {
+    return getIndexedPortrait(customPortraits[name], name, "normal");
+  }
   if (charPortraitsFemale[name] && gender && /^女/.test(gender)) {
     return getIndexedPortrait(charPortraitsFemale[name], name, "female");
   }
   return charPortraits[name]
     ? getIndexedPortrait(charPortraits[name], name, "normal")
     : undefined;
-}
+};
 
 /* 保存自定义立绘到 localStorage */
 window.saveCustomPortrait = function (name, url, mode = "normal") {
