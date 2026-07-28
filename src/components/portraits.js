@@ -60,6 +60,13 @@ function splitPortraitUrls(value) {
     .filter(Boolean);
 }
 
+function getDefaultPortraitValue(name, mode) {
+  if (mode === "normal") return defaultCharPortraits[name] || "";
+  if (mode === "female") return defaultCharPortraitsFemale[name] || "";
+  if (mode === "special") return defaultSpecialPortraits[name] || "";
+  return "";
+}
+
 function isCyclicRotation(left, right) {
   const a = splitPortraitUrls(left);
   const b = splitPortraitUrls(right);
@@ -867,13 +874,30 @@ window.saveCustomPortrait = function (name, url, mode = "normal") {
   try {
     const storageKey = PORTRAIT_CUSTOM_KEYS[mode];
     if (!storageKey) throw new Error("未知立绘类型：" + mode);
+    const normalizedUrl = splitPortraitUrls(url).join("|");
+    const normalizedDefault = splitPortraitUrls(
+      getDefaultPortraitValue(name, mode),
+    ).join("|");
+    if (normalizedDefault && normalizedUrl === normalizedDefault) {
+      console.log(
+        "[道渊] 保存内容与云端默认立绘一致，继续跟随云端:",
+        name,
+        mode,
+      );
+      return window.removeCustomPortrait(name, mode);
+    }
+
     const customPortraits = readPortraitJson(storageKey, {});
-    customPortraits[name] = url;
+    customPortraits[name] = normalizedUrl;
     const dataStr = JSON.stringify(customPortraits);
-    if (url && url.startsWith("data:") && url.length > 2 * 1024 * 1024) {
+    if (
+      normalizedUrl &&
+      normalizedUrl.startsWith("data:") &&
+      normalizedUrl.length > 2 * 1024 * 1024
+    ) {
       console.warn(
         "[道渊] 单张立绘过大(" +
-          (url.length / 1024 / 1024).toFixed(1) +
+          (normalizedUrl.length / 1024 / 1024).toFixed(1) +
           "MB)，建议压缩图片或使用图床",
       );
     }
@@ -893,14 +917,14 @@ window.saveCustomPortrait = function (name, url, mode = "normal") {
     getPortraitStorage().setItem(storageKey, dataStr);
     setExplicitCustom(name, mode, true);
     setPortraitIndex(name, mode, 0);
-    if (mode === "normal") charPortraits[name] = url;
-    else if (mode === "female") charPortraitsFemale[name] = url;
-    else window.specialPortraits[name] = url;
+    if (mode === "normal") charPortraits[name] = normalizedUrl;
+    else if (mode === "female") charPortraitsFemale[name] = normalizedUrl;
+    else window.specialPortraits[name] = normalizedUrl;
     if (typeof window.populateCharacterData === "function") {
       window.populateCharacterData();
     }
     refreshVisiblePortraitSearch();
-    window.updatePortraitView(name, splitPortraitUrls(url)[0] || "");
+    window.updatePortraitView(name, splitPortraitUrls(normalizedUrl)[0] || "");
     return true;
   } catch (e) {
     console.warn("[道渊] 保存自定义立绘失败:", e);
@@ -984,6 +1008,56 @@ window.removeCustomPortrait = function (name, mode = "normal") {
     console.warn("[道渊] 删除自定义立绘失败:", e);
     return false;
   }
+};
+
+/* 暂无立绘时的操作提示 */
+window.showMissingPortraitDialog = function (charName) {
+  const existing = document.getElementById("dy-missing-portrait-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "dy-missing-portrait-modal";
+  modal.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,0.82);backdrop-filter:blur(5px);z-index:9999999;display:flex;align-items:center;justify-content:center;padding:20px;";
+  modal.innerHTML = `
+    <div style="width:88%;max-width:410px;padding:24px;background:linear-gradient(145deg,rgba(25,20,30,0.97),rgba(15,10,15,0.99));border:1px solid var(--border-metal);border-top:2px solid var(--accent-gold);border-bottom:2px solid var(--accent-gold);border-radius:12px;box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 20px rgba(255,215,0,0.05);text-align:center;animation:mapPanelSlideUp 0.3s cubic-bezier(0.2,0.8,0.2,1);">
+      <div style="font-size:32px;margin-bottom:10px;text-shadow:0 0 12px var(--accent-gold-glow);">🖼️</div>
+      <div style="color:var(--accent-gold);font-size:1.18em;font-weight:bold;letter-spacing:2px;margin-bottom:12px;">尚未收录角色立绘</div>
+      <div style="color:var(--text-main);font-size:0.95em;line-height:1.7;margin-bottom:22px;">
+        <span id="dy-missing-portrait-name" style="color:var(--accent-mana);font-weight:bold;"></span> 暂无可用立绘。<br>
+        <span style="color:var(--text-dim);font-size:0.9em;">可为该角色自定义配置，或前往公告获取最新立绘。</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">
+        <button id="dy-missing-custom-btn" style="flex:1;min-width:120px;padding:9px 14px;background:linear-gradient(135deg,#b8860b,#ffd700);color:#1a0f0f;border:1px solid rgba(255,255,255,0.35);border-radius:7px;cursor:pointer;font-weight:bold;box-shadow:0 4px 10px rgba(0,0,0,0.45);">🎨 自定义配置</button>
+        <button id="dy-missing-notice-btn" style="flex:1;min-width:120px;padding:9px 14px;background:rgba(100,180,255,0.12);color:#64b4ff;border:1px solid rgba(100,180,255,0.45);border-radius:7px;cursor:pointer;font-weight:bold;">📜 前往公告</button>
+        <button id="dy-missing-cancel-btn" style="padding:9px 18px;background:rgba(255,255,255,0.05);color:var(--text-dim);border:1px solid rgba(255,255,255,0.2);border-radius:7px;cursor:pointer;font-weight:bold;">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById("dy-missing-portrait-name").textContent =
+    "「" + charName + "」";
+
+  const closeModal = () => modal.remove();
+  document.getElementById("dy-missing-cancel-btn").onclick = closeModal;
+  document.getElementById("dy-missing-custom-btn").onclick = function () {
+    closeModal();
+    window.openCustomPortraitDialog(charName);
+  };
+  document.getElementById("dy-missing-notice-btn").onclick = async function () {
+    closeModal();
+    if (!window.dyNoticeData && typeof window.loadRemoteNotice === "function") {
+      await window.loadRemoteNotice();
+    }
+    if (typeof window.fetchAndShowNotice !== "function") return;
+    await window.fetchAndShowNotice();
+    const portraitTab = Array.from(
+      document.querySelectorAll("#dy-notice-tabs .n-tab"),
+    ).find((tab) => tab.textContent.trim() === "立绘更新");
+    if (portraitTab) window.switchNoticeTab("立绘更新", portraitTab);
+  };
+  modal.onclick = function (event) {
+    if (event.target === modal) closeModal();
+  };
 };
 
 /* 打开自定义立绘弹窗 */

@@ -458,6 +458,115 @@ window.saveJiuqiEdit = async function (pathStr) {
     alert("保存失败: " + e.message);
   }
 }; /* 使用 errorCatched 包装入口并运行 */
+const NOTICE_VERSION_READ_KEY = "daoyuan_notice_read_version";
+const NOTICE_PORTRAIT_READ_KEY = "daoyuan_notice_read_portrait_update";
+
+window.getNoticeUnreadState = function () {
+  const data = window.dyNoticeData || {};
+  const version = String(data.version || "");
+  const portraitUpdate = String(
+    data.tabs && data.tabs["立绘更新"] ? data.tabs["立绘更新"] : "",
+  );
+  try {
+    return {
+      version:
+        version !== "" &&
+        localStorage.getItem(NOTICE_VERSION_READ_KEY) !== version,
+      portrait:
+        portraitUpdate !== "" &&
+        localStorage.getItem(NOTICE_PORTRAIT_READ_KEY) !== portraitUpdate,
+      versionValue: version,
+      portraitValue: portraitUpdate,
+    };
+  } catch (e) {
+    console.warn("[道渊] 读取公告已读状态失败:", e);
+    return {
+      version: false,
+      portrait: false,
+      versionValue: version,
+      portraitValue: portraitUpdate,
+    };
+  }
+};
+
+window.updateNoticeHeaderAttention = function () {
+  const state = window.getNoticeUnreadState();
+  const hasUnread = state.version || state.portrait;
+  const btns = document.querySelectorAll(
+    "#dy-notice-btn, .dy-notice-btn-class",
+  );
+  btns.forEach((btn) => {
+    let dot = btn.querySelector(".dy-notice-dot-class");
+    const icon = btn.querySelector(".dy-btn-icon");
+    if (hasUnread) {
+      btn.style.position = "relative";
+      if (!dot) {
+        dot = document.createElement("div");
+        dot.className = "dy-notice-dot-class";
+        dot.style.cssText =
+          "position:absolute;top:-2px;right:-2px;width:10px;height:10px;background:var(--accent-blood);border-radius:50%;box-shadow:0 0 5px var(--accent-blood-glow);border:1px solid rgba(0,0,0,0.8);z-index:5;";
+        btn.appendChild(dot);
+      }
+      if (icon && !icon.dataset.animating && typeof icon.animate === "function") {
+        icon.dataset.animating = "true";
+        icon.style.display = "inline-block";
+        icon.style.transformOrigin = "top center";
+        icon.animate(
+          [
+            { transform: "rotate(0deg)" },
+            { transform: "rotate(15deg)" },
+            { transform: "rotate(-10deg)" },
+            { transform: "rotate(5deg)" },
+            { transform: "rotate(-5deg)" },
+            { transform: "rotate(2deg)" },
+            { transform: "rotate(0deg)" },
+            { transform: "rotate(0deg)" },
+          ],
+          {
+            duration: 1200,
+            iterations: Infinity,
+            easing: "ease-in-out",
+          },
+        );
+      }
+    } else {
+      if (dot) dot.remove();
+      if (icon) {
+        delete icon.dataset.animating;
+        if (typeof icon.getAnimations === "function") {
+          icon.getAnimations().forEach((animation) => animation.cancel());
+        }
+      }
+    }
+  });
+};
+
+window.markNoticeVersionRead = function (element) {
+  const state = window.getNoticeUnreadState();
+  try {
+    if (state.versionValue) {
+      localStorage.setItem(NOTICE_VERSION_READ_KEY, state.versionValue);
+    }
+  } catch (e) {
+    console.warn("[道渊] 保存版本公告已读状态失败:", e);
+  }
+  if (element) element.classList.remove("dy-update-attention");
+  window.updateNoticeHeaderAttention();
+};
+
+window.markPortraitUpdateRead = function (element) {
+  const state = window.getNoticeUnreadState();
+  try {
+    if (state.portraitValue) {
+      localStorage.setItem(NOTICE_PORTRAIT_READ_KEY, state.portraitValue);
+    }
+  } catch (e) {
+    console.warn("[道渊] 保存立绘公告已读状态失败:", e);
+  }
+  if (element) element.classList.remove("dy-update-attention");
+  window.updateNoticeHeaderAttention();
+};
+
 window.loadRemoteNotice = async function () {
   try {
     const res = await fetch(
@@ -466,42 +575,7 @@ window.loadRemoteNotice = async function () {
     );
     if (res.ok) {
       window.dyNoticeData = await res.json();
-      const savedVer = localStorage.getItem("daoyuan_notice_read_version");
-      const currentVer = JSON.stringify(window.dyNoticeData);
-      if (savedVer !== currentVer) {
-        let btns = document.querySelectorAll("#dy-notice-btn, .dy-notice-btn-class");
-        btns.forEach(btn => {
-          if (!btn.querySelector(".dy-notice-dot-class") && !btn.querySelector("#dy-notice-dot")) {
-            btn.style.position = "relative";
-            let dot = document.createElement("div");
-            dot.className = "dy-notice-dot-class";
-            dot.id = "dy-notice-dot"; // Keep for backwards compatibility
-            dot.style.cssText = "position:absolute;top:-2px;right:-2px;width:10px;height:10px;background:var(--accent-blood);border-radius:50%;box-shadow:0 0 5px var(--accent-blood-glow);border:1px solid rgba(0,0,0,0.8);z-index:5;";
-            btn.appendChild(dot);
-          
-          let icon = btn.querySelector('.dy-btn-icon');
-          if (icon && !icon.dataset.animating) {
-            icon.dataset.animating = "true";
-            icon.style.display = "inline-block";
-            icon.style.transformOrigin = "top center";
-            icon.animate([
-                { transform: 'rotate(0deg)' },
-                { transform: 'rotate(15deg)' },
-                { transform: 'rotate(-10deg)' },
-                { transform: 'rotate(5deg)' },
-                { transform: 'rotate(-5deg)' },
-                { transform: 'rotate(2deg)' },
-                { transform: 'rotate(0deg)' },
-                { transform: 'rotate(0deg)' }
-            ], {
-                duration: 1200,
-                iterations: Infinity,
-                easing: 'ease-in-out'
-            });
-          }
-        }
-      });
-    }
+      window.updateNoticeHeaderAttention();
     }
   } catch (e) {
     console.error("[道渊] 获取公告失败:", e);
@@ -552,37 +626,30 @@ window.fetchAndShowNotice = async function () {
     m.style.cssText =
       "display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);backdrop-filter:blur(4px);z-index:9999999;justify-content:center;align-items:center;";
     m.innerHTML =
-      '<div style="background:linear-gradient(145deg,rgba(25,20,30,0.95),rgba(15,10,15,0.98));border:1px solid var(--accent-gold);border-radius:12px;width:85%;max-width:450px;padding:20px 25px;position:relative;box-shadow:0 0 30px rgba(255,215,0,0.2);display:flex;flex-direction:column;max-height:85vh;"><span id="dy-notice-close" style="position:absolute;top:10px;right:15px;cursor:pointer;font-size:24px;color:var(--text-dim);z-index:10;">×</span><div style="color:var(--accent-gold);font-size:1.3em;font-weight:bold;text-align:center;margin-bottom:15px;letter-spacing:2px;flex-shrink:0;cursor:pointer;" onclick="localStorage.removeItem(\'daoyuan_notice_read_version\'); alert(\'【测试模式】已强制重置公告已读状态，请刷新当前页面以测试新公告提醒动画！\');">📜 云端信符</div><div id="dy-notice-tabs" style="display:flex;gap:5px;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:15px;flex-shrink:0;"><div class="n-tab active" onclick="window.switchNoticeTab(\'版本更新\', this)" style="flex:1;text-align:center;padding:8px 0;cursor:pointer;color:var(--accent-gold);border-bottom:2px solid var(--accent-gold);font-weight:bold;font-size:0.9em;transition:all 0.2s;">版本更新</div><div class="n-tab" onclick="window.switchNoticeTab(\'立绘更新\', this)" style="flex:1;text-align:center;padding:8px 0;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;font-size:0.9em;transition:all 0.2s;">立绘更新</div><div class="n-tab" onclick="window.switchNoticeTab(\'其他\', this)" style="flex:1;text-align:center;padding:8px 0;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;font-size:0.9em;transition:all 0.2s;">其他</div></div><div id="dy-notice-content" style="color:var(--text-main);font-size:0.95em;line-height:1.6;overflow-y:auto;padding-right:5px;flex-grow:1;"></div><div id="dy-notice-date" style="text-align:center;flex-shrink:0;margin-top:15px;border-top:1px dashed rgba(255,255,255,0.1);padding-top:10px;"></div></div>';
+      '<div style="background:linear-gradient(145deg,rgba(25,20,30,0.95),rgba(15,10,15,0.98));border:1px solid var(--accent-gold);border-radius:12px;width:85%;max-width:450px;padding:20px 25px;position:relative;box-shadow:0 0 30px rgba(255,215,0,0.2);display:flex;flex-direction:column;max-height:85vh;"><span id="dy-notice-close" style="position:absolute;top:10px;right:15px;cursor:pointer;font-size:24px;color:var(--text-dim);z-index:10;">×</span><div style="color:var(--accent-gold);font-size:1.3em;font-weight:bold;text-align:center;margin-bottom:15px;letter-spacing:2px;flex-shrink:0;">📜 云端信符</div><div id="dy-notice-tabs" style="display:flex;gap:5px;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:15px;flex-shrink:0;"><div class="n-tab active" onclick="window.switchNoticeTab(\'版本更新\', this)" style="flex:1;text-align:center;padding:8px 0;cursor:pointer;color:var(--accent-gold);border-bottom:2px solid var(--accent-gold);font-weight:bold;font-size:0.9em;transition:all 0.2s;">版本更新</div><div class="n-tab" onclick="window.switchNoticeTab(\'立绘更新\', this)" style="flex:1;text-align:center;padding:8px 0;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;font-size:0.9em;transition:all 0.2s;">立绘更新</div><div class="n-tab" onclick="window.switchNoticeTab(\'其他\', this)" style="flex:1;text-align:center;padding:8px 0;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;font-size:0.9em;transition:all 0.2s;">其他</div></div><div id="dy-notice-content" style="color:var(--text-main);font-size:0.95em;line-height:1.6;overflow-y:auto;padding-right:5px;flex-grow:1;"></div><div id="dy-notice-date" style="text-align:center;flex-shrink:0;margin-top:15px;border-top:1px dashed rgba(255,255,255,0.1);padding-top:10px;"></div></div>';
     document.body.appendChild(m);
     document.getElementById("dy-notice-close").onclick = function () {
       m.style.display = "none";
     };
   }
   m.style.display = "flex";
-  let dots = document.querySelectorAll("#dy-notice-dot, .dy-notice-dot-class");
-  dots.forEach(d => d.remove());
-  let btns = document.querySelectorAll("#dy-notice-btn, .dy-notice-btn-class");
-  btns.forEach(btn => {
-    let icon = btn.querySelector('.dy-btn-icon');
-    if (icon) {
-      delete icon.dataset.animating;
-      icon.getAnimations().forEach(a => a.cancel());
-    }
-  });
   if (window.dyNoticeData) {
-    const currentVer = JSON.stringify(window.dyNoticeData);
-    localStorage.setItem("daoyuan_notice_read_version", currentVer);
+    const noticeUnread = window.getNoticeUnreadState();
     window.switchNoticeTab("版本更新", m.querySelector(".n-tab"));
     let safeDate = window.dySanitizeHtml(window.dyNoticeData.date || "未知");
     let safeVer = window.dySanitizeHtml(window.dyNoticeData.version || "未知");
     document.getElementById("dy-notice-date").innerHTML =
       '<div style="color:var(--text-dim);font-size:0.8em;margin-bottom:6px;">传讯时间: ' +
       safeDate +
-      '</div><div style="color:var(--accent-gold);font-size:1.3em;font-weight:bold;text-shadow:0 0 10px var(--accent-gold-glow);letter-spacing:1px;font-family:\'JetBrains Mono\',monospace;margin-bottom:15px;display:flex;align-items:center;justify-content:center;gap:8px;">🚀 最新版本：<a href="https://discord.com/channels/1134557553011998840/1460952153827971172" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:linear-gradient(145deg, rgba(88,101,242,0.2), rgba(88,101,242,0.05));border:1px solid rgba(88,101,242,0.5);border-radius:18px;color:#fff;text-shadow:none;text-decoration:none;font-size:0.75em;letter-spacing:1px;font-family:sans-serif;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(88,101,242,0.1);" onclick="window.showWarningModal(event);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(88,101,242,0.4), rgba(88,101,242,0.15))\'; this.style.boxShadow=\'0 0 15px rgba(88,101,242,0.4)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(88,101,242,0.2), rgba(88,101,242,0.05))\'; this.style.boxShadow=\'0 2px 10px rgba(88,101,242,0.1)\'; this.style.transform=\'none\';"><svg width="18" height="18" viewBox="0 0 127.14 96.36" fill="#5865F2"><path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.31,60,73.31,53s5-12.74,11.43-12.74S96.2,46,96.09,53,91.08,65.69,84.69,65.69Z"/></svg><span>' +
+      '</div><div style="color:var(--accent-gold);font-size:1.3em;font-weight:bold;text-shadow:0 0 10px var(--accent-gold-glow);letter-spacing:1px;font-family:\'JetBrains Mono\',monospace;margin-bottom:15px;display:flex;align-items:center;justify-content:center;gap:8px;">🚀 最新版本：<a href="https://discord.com/channels/1134557553011998840/1460952153827971172" target="_blank" rel="noopener noreferrer" class="' +
+      (noticeUnread.version ? "dy-update-attention" : "") +
+      '" style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:linear-gradient(145deg, rgba(88,101,242,0.2), rgba(88,101,242,0.05));border:1px solid rgba(88,101,242,0.5);border-radius:18px;color:#fff;text-shadow:none;text-decoration:none;font-size:0.75em;letter-spacing:1px;font-family:sans-serif;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(88,101,242,0.1);" onclick="window.markNoticeVersionRead(this); window.showWarningModal(event);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(88,101,242,0.4), rgba(88,101,242,0.15))\'; this.style.boxShadow=\'0 0 15px rgba(88,101,242,0.4)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(88,101,242,0.2), rgba(88,101,242,0.05))\'; this.style.boxShadow=\'0 2px 10px rgba(88,101,242,0.1)\'; this.style.transform=\'none\';"><svg width="18" height="18" viewBox="0 0 127.14 96.36" fill="#5865F2"><path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.31,60,73.31,53s5-12.74,11.43-12.74S96.2,46,96.09,53,91.08,65.69,84.69,65.69Z"/></svg><span>' +
       safeVer +
       '</span></a></div>' +
       '<div style="margin-bottom:12px;"><a href="https://daoyuan.mayuworld.com/" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;background:linear-gradient(145deg, rgba(255,215,0,0.1), rgba(255,215,0,0.02));border:1px solid rgba(255,215,0,0.3);border-radius:24px;color:var(--accent-gold);text-decoration:none;font-size:1em;letter-spacing:1px;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(255,215,0,0.05);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(255,215,0,0.2), rgba(255,215,0,0.05))\'; this.style.boxShadow=\'0 0 15px rgba(255,215,0,0.2)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(255,215,0,0.1), rgba(255,215,0,0.02))\'; this.style.boxShadow=\'0 2px 10px rgba(255,215,0,0.05)\'; this.style.transform=\'none\';"><span>📖 查阅道渊 Wiki 图鉴</span><span style="font-size:0.8em;opacity:0.8">➔</span></a></div>' +
-      '<div><button onclick="window.forceUpdateRemotePortraits(this)" style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;background:linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02));border:1px solid rgba(100,180,255,0.3);border-radius:24px;color:#64b4ff;cursor:pointer;font-size:0.95em;letter-spacing:1px;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(100,180,255,0.05);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.2), rgba(100,180,255,0.05))\'; this.style.boxShadow=\'0 0 15px rgba(100,180,255,0.2)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02))\'; this.style.boxShadow=\'0 2px 10px rgba(100,180,255,0.05)\'; this.style.transform=\'none\';">🖼️ 同步最新立绘库</button></div>';
+      '<div><button class="' +
+      (noticeUnread.portrait ? "dy-update-attention" : "") +
+      '" onclick="window.markPortraitUpdateRead(this); window.forceUpdateRemotePortraits(this)" style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;background:linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02));border:1px solid rgba(100,180,255,0.3);border-radius:24px;color:#64b4ff;cursor:pointer;font-size:0.95em;letter-spacing:1px;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(100,180,255,0.05);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.2), rgba(100,180,255,0.05))\'; this.style.boxShadow=\'0 0 15px rgba(100,180,255,0.2)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02))\'; this.style.boxShadow=\'0 2px 10px rgba(100,180,255,0.05)\'; this.style.transform=\'none\';">🖼️ 同步最新立绘库</button></div>';
 
   if (!window.showWarningModal) {
     window.showWarningModal = function(e) {
@@ -647,7 +714,7 @@ if (!document.getElementById("dy-header-style")) {
   let s = document.createElement("style");
   s.id = "dy-header-style";
   s.innerHTML =
-    ".guild-logo{flex-shrink:0 !important; display:grid !important;} .time-display{display:none !important;} .content-grid{transition:max-height 0.5s ease-in-out,opacity 0.3s ease-in-out;max-height:3000px;opacity:1;overflow:hidden;} .dy-bar-collapsed .content-grid{max-height:0px !important;opacity:0 !important;padding-top:0 !important;padding-bottom:0 !important;margin:0 !important;} .dy-bar-collapsed .fairy-container{display:none !important;} body.dy-global-collapsed #expression-wrapper, body.dy-global-collapsed .waifu, body.dy-global-collapsed #waifu, body.dy-global-collapsed #char-sprite, body.dy-global-collapsed .qiling, body.dy-global-collapsed #SillyTavern-Mascot {display:none !important;} .dy-bar-collapsed #dy-notice-btn, .dy-bar-collapsed #dy-jiuqi-btn { opacity: 0.2 !important; pointer-events: none !important; filter: grayscale(1); cursor: not-allowed !important; } .dy-top-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--accent-gold);padding:3px 10px;border-radius:6px;background:rgba(255,215,0,0.05);box-shadow:0 0 5px rgba(255,215,0,0.1);transition:all 0.2s;min-width:45px;line-height:1.2;user-select:none;} .dy-top-btn:hover{background:rgba(255,215,0,0.2);box-shadow:0 0 8px var(--accent-gold-glow);} .dy-btn-icon{font-size:14px;margin-bottom:2px;} .dy-btn-txt{font-size:11px;color:var(--accent-gold);font-weight:bold;} .guild-badge{display:flex;align-items:center;gap:15px;}";
+    ".guild-logo{flex-shrink:0 !important; display:grid !important;} .time-display{display:none !important;} .content-grid{transition:max-height 0.5s ease-in-out,opacity 0.3s ease-in-out;max-height:3000px;opacity:1;overflow:hidden;} .dy-bar-collapsed .content-grid{max-height:0px !important;opacity:0 !important;padding-top:0 !important;padding-bottom:0 !important;margin:0 !important;} .dy-bar-collapsed .fairy-container{display:none !important;} body.dy-global-collapsed #expression-wrapper, body.dy-global-collapsed .waifu, body.dy-global-collapsed #waifu, body.dy-global-collapsed #char-sprite, body.dy-global-collapsed .qiling, body.dy-global-collapsed #SillyTavern-Mascot {display:none !important;} .dy-bar-collapsed #dy-notice-btn, .dy-bar-collapsed #dy-jiuqi-btn { opacity: 0.2 !important; pointer-events: none !important; filter: grayscale(1); cursor: not-allowed !important; } .dy-top-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--accent-gold);padding:3px 10px;border-radius:6px;background:rgba(255,215,0,0.05);box-shadow:0 0 5px rgba(255,215,0,0.1);transition:all 0.2s;min-width:45px;line-height:1.2;user-select:none;} .dy-top-btn:hover{background:rgba(255,215,0,0.2);box-shadow:0 0 8px var(--accent-gold-glow);} .dy-btn-icon{font-size:14px;margin-bottom:2px;} .dy-btn-txt{font-size:11px;color:var(--accent-gold);font-weight:bold;} @keyframes dy-update-pulse{0%,100%{filter:drop-shadow(0 0 1px rgba(255,77,77,0.15));}50%{filter:drop-shadow(0 0 7px rgba(255,77,77,0.7));}} @keyframes dy-update-dot-pulse{0%,100%{transform:scale(1);opacity:0.9;}50%{transform:scale(1.3);opacity:1;}} .dy-update-attention{position:relative!important;animation:dy-update-pulse 2.2s ease-in-out infinite!important;} .dy-update-attention::after{content:'';position:absolute;top:-4px;right:-4px;width:9px;height:9px;border-radius:50%;background:var(--accent-blood);border:1px solid rgba(0,0,0,0.75);box-shadow:0 0 6px var(--accent-blood-glow);animation:dy-update-dot-pulse 1.8s ease-in-out infinite;z-index:5;} .guild-badge{display:flex;align-items:center;gap:15px;}";
   document.head.appendChild(s);
 }
 setTimeout(function () {
