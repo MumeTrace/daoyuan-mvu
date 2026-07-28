@@ -660,16 +660,15 @@ window.populateCharacterData = function() {
 
   /* 绝色榜页 */
   let prevSearch = $("#portrait-search-input").val() || "";
-  let prevResult = $("#portrait-search-result").html() || "";
-  let isResVis = $("#portrait-search-result").is(":visible");
+  let shouldRestoreSearch =
+    prevSearch.trim() !== "" &&
+    $("#portrait-search-result").css("display") !== "none";
   let beautiesHtml =
     '<div class="info-card" style="border-color:var(--rare-text); margin-bottom:15px; overflow:visible;"><div class="info-title" style="color:var(--rare-text);"><span>仙姿寻影 (全图鉴立绘检索)</span><span>🔍</span></div><div class="portrait-search-row" style="display:flex; gap:8px;"><input type="text" id="portrait-search-input" class="reply-input" placeholder="搜名字，或输“随机”抽卡..." value="' +
     prevSearch +
     '" onkeydown="if(event.key===\'Enter\'){event.preventDefault();event.stopPropagation();window.searchAndShowPortrait();}" style="flex:1; height:35px; padding:5px 10px; box-sizing:border-box;"><button class="reply-button" onclick="window.searchAndShowPortrait()" style="height:35px; min-width:60px; padding:0 15px;">搜索</button></div><div id="portrait-search-result" style="margin-top:15px; display:' +
-    (isResVis ? "block" : "none") +
-    ';">' +
-    prevResult +
-    "</div></div>";
+    (shouldRestoreSearch ? "block" : "none") +
+    ';"></div></div>';
   const sortedBeauties = Object.entries(beauties).sort(
     (a, b) => (a[1].排名 || 999) - (b[1].排名 || 999),
   );
@@ -703,6 +702,12 @@ window.populateCharacterData = function() {
     beautiesHtml ||
       '<p style="color: var(--text-dim); font-style: italic;">暂无相关记录。</p>',
   );
+  if (
+    shouldRestoreSearch &&
+    typeof window.searchAndShowPortrait === "function"
+  ) {
+    window.searchAndShowPortrait();
+  }
 
   /* 动向页 */
   const events = world.动向 || {};

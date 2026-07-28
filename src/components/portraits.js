@@ -4,36 +4,184 @@ import { renderDaoyuanApplause } from "./applause.js";
 var charPortraits = window.charPortraits = {};
 var charPortraitsFemale = window.charPortraitsFemale = {};
 window.specialPortraits = {};
+var defaultCharPortraits = window.defaultCharPortraits = {};
+var defaultCharPortraitsFemale = window.defaultCharPortraitsFemale = {};
+var defaultSpecialPortraits = window.defaultSpecialPortraits = {};
+
+const PORTRAIT_CACHE_KEY = "daoyuan_portraits_cache";
+const PORTRAIT_INDEX_KEY = "daoyuan_portrait_indices";
+const PORTRAIT_EXPLICIT_CUSTOM_KEY = "daoyuan_explicit_custom_portraits";
+const PORTRAIT_CUSTOM_KEYS = {
+  normal: "daoyuan_custom_portraits",
+  female: "daoyuan_custom_portraits_female",
+  special: "daoyuan_custom_portraits_special",
+};
+
+function getPortraitStorage() {
+  return window.DaoyuanStatusStorage || window.localStorage;
+}
+
+function readPortraitJson(key, fallback = {}) {
+  try {
+    const saved = getPortraitStorage().getItem(key);
+    if (!saved) return fallback;
+    const parsed = JSON.parse(saved);
+    return typeof parsed === "object" && parsed !== null ? parsed : fallback;
+  } catch (e) {
+    console.warn("[道渊] 读取立绘本地数据失败:", key, e);
+    return fallback;
+  }
+}
+
+function writePortraitJson(key, value) {
+  getPortraitStorage().setItem(key, JSON.stringify(value));
+}
+
+function normalizePortraitMap(obj) {
+  if (typeof obj !== "object" || obj === null) return {};
+  const result = {};
+  for (const [name, value] of Object.entries(obj)) {
+    if (typeof value !== "string") continue;
+    const urls = value
+      .split("|")
+      .map((url) => url.trim())
+      .filter(
+        (url) => url.startsWith("http") || url.startsWith("data:image"),
+      );
+    if (urls.length > 0) result[name] = urls.join("|");
+  }
+  return result;
+}
+
+function splitPortraitUrls(value) {
+  return String(value || "")
+    .split("|")
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+function isCyclicRotation(left, right) {
+  const a = splitPortraitUrls(left);
+  const b = splitPortraitUrls(right);
+  if (a.length === 0 || a.length !== b.length) return false;
+  return a.some((_, offset) =>
+    a.every((url, index) => url === b[(index + offset) % b.length]),
+  );
+}
+
+function getExplicitCustomState() {
+  const state = readPortraitJson(PORTRAIT_EXPLICIT_CUSTOM_KEY, {});
+  return {
+    normal: state.normal || {},
+    female: state.female || {},
+    special: state.special || {},
+  };
+}
+
+function setExplicitCustom(name, mode, enabled) {
+  const state = getExplicitCustomState();
+  if (enabled) state[mode][name] = true;
+  else delete state[mode][name];
+  writePortraitJson(PORTRAIT_EXPLICIT_CUSTOM_KEY, state);
+}
+
+function reconcileLegacyPortraitOverrides(defaultsByMode) {
+  const explicit = getExplicitCustomState();
+
+  Object.entries(PORTRAIT_CUSTOM_KEYS).forEach(([mode, storageKey]) => {
+    const custom = normalizePortraitMap(readPortraitJson(storageKey, {}));
+    const defaults = defaultsByMode[mode] || {};
+    let customChanged = false;
+
+    Object.entries(custom).forEach(([name, value]) => {
+      if (explicit[mode][name]) return;
+      if (defaults[name] && isCyclicRotation(value, defaults[name])) {
+        delete custom[name];
+        customChanged = true;
+      }
+    });
+
+    if (customChanged) writePortraitJson(storageKey, custom);
+  });
+}
+
+function parsePortraitCache(raw) {
+  if (!raw) return null;
+  const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (typeof data !== "object" || data === null) {
+    throw new Error("立绘库不是有效对象");
+  }
+  return {
+    raw: data,
+    normal: normalizePortraitMap(data.charPortraits),
+    female: normalizePortraitMap(data.charPortraitsFemale),
+    special: normalizePortraitMap(data.specialPortraits),
+  };
+}
+
+function getPortraitIndexState() {
+  const state = readPortraitJson(PORTRAIT_INDEX_KEY, {});
+  return {
+    normal: state.normal || {},
+    female: state.female || {},
+    special: state.special || {},
+  };
+}
+
+function getPortraitIndex(name, mode, length) {
+  if (length <= 0) return 0;
+  const state = getPortraitIndexState();
+  const stored = Number(state[mode][name]);
+  return Number.isInteger(stored) && stored >= 0 ? stored % length : 0;
+}
+
+function setPortraitIndex(name, mode, index) {
+  const state = getPortraitIndexState();
+  state[mode][name] = index;
+  writePortraitJson(PORTRAIT_INDEX_KEY, state);
+}
+
+function getIndexedPortrait(value, name, mode) {
+  const urls = splitPortraitUrls(value);
+  return urls[getPortraitIndex(name, mode, urls.length)];
+}
+
+function refreshVisiblePortraitSearch() {
+  const input = document.getElementById("portrait-search-input");
+  const result = document.getElementById("portrait-search-result");
+  if (
+    input &&
+    input.value.trim() &&
+    result &&
+    result.style.display !== "none" &&
+    typeof window.searchAndShowPortrait === "function"
+  ) {
+    window.searchAndShowPortrait();
+  }
+}
 
 window.loadRemotePortraits = async function () {
-  const val = (obj) => {
-    if (typeof obj !== "object" || obj === null) return {};
-    let r = {};
-    for (let k in obj) {
-      if (typeof obj[k] === "string") {
-        let vp = obj[k]
-          .split("|")
-          .filter(
-            (p) =>
-              p.trim().startsWith("http") || p.trim().startsWith("data:image"),
-          );
-        if (vp.length > 0) r[k] = vp.join("|");
-      }
-    }
-    return r;
-  };
   let hasCache = false;
   try {
-    const cached = localStorage.getItem("daoyuan_portraits_cache");
+    const cached = getPortraitStorage().getItem(PORTRAIT_CACHE_KEY);
     if (cached) {
-      const data = JSON.parse(cached);
-      if (data.charPortraits) { charPortraits = val(data.charPortraits); window.charPortraits = charPortraits; }
-      if (data.charPortraitsFemale) {
-        charPortraitsFemale = val(data.charPortraitsFemale);
-        window.charPortraitsFemale = charPortraitsFemale;
-      }
-      if (data.specialPortraits)
-        window.specialPortraits = val(data.specialPortraits);
+      const parsed = parsePortraitCache(cached);
+      defaultCharPortraits = window.defaultCharPortraits = parsed.normal;
+      defaultCharPortraitsFemale = window.defaultCharPortraitsFemale =
+        parsed.female;
+      defaultSpecialPortraits = window.defaultSpecialPortraits = parsed.special;
+
+      reconcileLegacyPortraitOverrides({
+        normal: defaultCharPortraits,
+        female: defaultCharPortraitsFemale,
+        special: defaultSpecialPortraits,
+      });
+
+      charPortraits = window.charPortraits = { ...defaultCharPortraits };
+      charPortraitsFemale = window.charPortraitsFemale = {
+        ...defaultCharPortraitsFemale,
+      };
+      window.specialPortraits = { ...defaultSpecialPortraits };
       console.log("[道渊状态栏] 本地缓存立绘配置加载成功");
       hasCache = true;
     }
@@ -42,9 +190,11 @@ window.loadRemotePortraits = async function () {
   }
 
   if (!hasCache) {
-    const hasPrompted = localStorage.getItem("daoyuan_portraits_prompted");
+    const hasPrompted = getPortraitStorage().getItem(
+      "daoyuan_portraits_prompted",
+    );
     if (!hasPrompted) {
-      localStorage.setItem("daoyuan_portraits_prompted", "1");
+      getPortraitStorage().setItem("daoyuan_portraits_prompted", "1");
       setTimeout(() => {
         const pm = document.createElement("div");
         pm.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:999999;display:flex;justify-content:center;align-items:center;backdrop-filter:blur(5px);";
@@ -78,21 +228,28 @@ window.loadRemotePortraits = async function () {
     }
   }
   try {
-    const saved = localStorage.getItem("daoyuan_custom_portraits");
-    if (saved) {
-      Object.assign(charPortraits, val(JSON.parse(saved)));
-    }
-    const savedFem = localStorage.getItem("daoyuan_custom_portraits_female");
-    if (savedFem) {
-      Object.assign(charPortraitsFemale, val(JSON.parse(savedFem)));
-    }
-    const savedSpec = localStorage.getItem("daoyuan_custom_portraits_special");
-    if (savedSpec) {
-      Object.assign(window.specialPortraits, val(JSON.parse(savedSpec)));
-    }
+    Object.assign(
+      charPortraits,
+      normalizePortraitMap(
+        readPortraitJson(PORTRAIT_CUSTOM_KEYS.normal, {}),
+      ),
+    );
+    Object.assign(
+      charPortraitsFemale,
+      normalizePortraitMap(
+        readPortraitJson(PORTRAIT_CUSTOM_KEYS.female, {}),
+      ),
+    );
+    Object.assign(
+      window.specialPortraits,
+      normalizePortraitMap(
+        readPortraitJson(PORTRAIT_CUSTOM_KEYS.special, {}),
+      ),
+    );
   } catch (e) {
     console.warn("[道渊] 加载自定义立绘失败:", e);
   }
+  return hasCache;
 };
 
 window.forceUpdateRemotePortraits = async function (btnElement) {
@@ -123,25 +280,52 @@ window.forceUpdateRemotePortraits = async function (btnElement) {
   try {
     const url = "https://raw.githubusercontent.com/YttriumCarbide/Daoyuan/main/portraits.json";
     const response = await fetch(url + "?t=" + new Date().getTime());
-    if (response.ok) {
-      const text = await response.text();
-      localStorage.setItem("daoyuan_portraits_cache", text);
-      await window.loadRemotePortraits();
-      if (typeof window.populateCharacterData === "function") {
-        window.populateCharacterData();
-      }
-      showToast("最新立绘库同步成功！", true);
-    } else {
-      showToast("同步失败，网络请求异常：" + response.status, false);
+    if (!response.ok) {
+      throw new Error("网络请求异常：" + response.status);
     }
+
+    const oldCache = getPortraitStorage().getItem(PORTRAIT_CACHE_KEY);
+    if (oldCache) {
+      try {
+        const previous = parsePortraitCache(oldCache);
+        reconcileLegacyPortraitOverrides(previous);
+      } catch (e) {
+        console.warn("[道渊] 旧立绘缓存无法用于迁移:", e);
+      }
+    }
+
+    const text = await response.text();
+    const incoming = parsePortraitCache(text);
+    if (
+      Object.keys(incoming.normal).length === 0 &&
+      Object.keys(incoming.female).length === 0 &&
+      Object.keys(incoming.special).length === 0
+    ) {
+      throw new Error("远程立绘库为空或格式不正确");
+    }
+
+    getPortraitStorage().setItem(
+      PORTRAIT_CACHE_KEY,
+      JSON.stringify(incoming.raw),
+    );
+    const loaded = await window.loadRemotePortraits();
+    if (!loaded) {
+      throw new Error("新版立绘库写入后无法重新加载");
+    }
+    if (typeof window.populateCharacterData === "function") {
+      window.populateCharacterData();
+    }
+    refreshVisiblePortraitSearch();
+    showToast("最新立绘库同步成功！", true);
   } catch (e) {
     console.error("[道渊状态栏] 手动同步立绘失败:", e);
-    showToast("同步失败，请检查网络连接", false);
-  }
-  if (btnElement) {
-    btnElement.innerHTML = "🖼️ 同步最新立绘库";
-    btnElement.style.opacity = "1";
-    btnElement.style.pointerEvents = "auto";
+    showToast("同步失败：" + e.message, false);
+  } finally {
+    if (btnElement) {
+      btnElement.innerHTML = "🖼️ 同步最新立绘库";
+      btnElement.style.opacity = "1";
+      btnElement.style.pointerEvents = "auto";
+    }
   }
 };
 
@@ -149,7 +333,7 @@ window.preloadPortraits = function (name) {
   let urls = [];
   let cp = {};
   try {
-    let s = localStorage.getItem("daoyuan_custom_portraits");
+    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
     if (s) cp = JSON.parse(s);
   } catch (e) {}
   let base =
@@ -241,7 +425,7 @@ window.updatePortraitView = function (name, newSrc) {
 window.showSpecialPortrait = function (name) {
   let special = window.specialPortraits ? window.specialPortraits[name] : "";
   if (!special) return;
-  let arr = special.split("|");
+  let arr = splitPortraitUrls(special);
   let c = document.querySelector(
     `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
   );
@@ -249,15 +433,21 @@ window.showSpecialPortrait = function (name) {
   if (img && arr.includes(img.dataset.src)) {
     let cp = {};
     try {
-      let s = localStorage.getItem("daoyuan_custom_portraits");
+      let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
       if (s) cp = JSON.parse(s);
     } catch (e) {}
     let base =
       cp[name] ||
       (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
-    window.updatePortraitView(name, base ? base.split("|")[0] : "");
+    window.updatePortraitView(
+      name,
+      getIndexedPortrait(base, name, "normal") || "",
+    );
   } else {
-    window.updatePortraitView(name, arr[0]);
+    window.updatePortraitView(
+      name,
+      getIndexedPortrait(special, name, "special") || "",
+    );
   }
 };
 window.switchPortrait = function (name) {
@@ -268,7 +458,7 @@ window.switchPortrait = function (name) {
   let cur = img ? img.dataset.src : "";
   let cp = {};
   try {
-    let s = localStorage.getItem("daoyuan_custom_portraits");
+    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
     if (s) cp = JSON.parse(s);
   } catch (e) {}
   let norm =
@@ -276,7 +466,7 @@ window.switchPortrait = function (name) {
     (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
   let cpf = {};
   try {
-    let s = localStorage.getItem("daoyuan_custom_portraits_female");
+    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.female);
     if (s) cpf = JSON.parse(s);
   } catch (e) {}
   let fem =
@@ -286,42 +476,29 @@ window.switchPortrait = function (name) {
       : "");
   let cps = {};
   try {
-    let s = localStorage.getItem("daoyuan_custom_portraits_special");
+    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.special);
     if (s) cps = JSON.parse(s);
   } catch (e) {}
   let spec =
     cps[name] || (window.specialPortraits ? window.specialPortraits[name] : "");
-  const cycle = (str, key, mem) => {
-    if (!str || !str.includes("|")) return false;
-    let arr = str.split("|");
-    if (!arr.includes(cur)) return false;
-    arr.push(arr.shift());
-    let nStr = arr.join("|");
-    let st = {};
-    try {
-      let s = localStorage.getItem(key);
-      if (s) st = JSON.parse(s);
-    } catch (e) {}
-    st[name] = nStr;
-    localStorage.setItem(key, JSON.stringify(st));
-    if (mem) mem[name] = nStr;
-    window.updatePortraitView(name, arr[0]);
+  const cycle = (str, mode) => {
+    const urls = splitPortraitUrls(str);
+    if (urls.length < 2) return false;
+    let currentIndex = urls.indexOf(cur);
+    if (currentIndex < 0) {
+      currentIndex = getPortraitIndex(name, mode, urls.length);
+    }
+    const nextIndex = (currentIndex + 1) % urls.length;
+    setPortraitIndex(name, mode, nextIndex);
+    window.updatePortraitView(name, urls[nextIndex]);
     return true;
   };
   let done = false;
   if (fem && fem.split("|").includes(cur))
-    done = cycle(
-      fem,
-      "daoyuan_custom_portraits_female",
-      typeof charPortraitsFemale !== "undefined" ? charPortraitsFemale : null,
-    );
+    done = cycle(fem, "female");
   else if (spec && spec.split("|").includes(cur))
-    done = cycle(
-      spec,
-      "daoyuan_custom_portraits_special",
-      window.specialPortraits,
-    );
-  else done = cycle(norm, "daoyuan_custom_portraits", cp);
+    done = cycle(spec, "special");
+  else done = cycle(norm, "normal");
   if (!done) {
     if (!document.getElementById("dy-portrait-toast")) {
       let t = document.createElement("div");
@@ -341,7 +518,7 @@ window.toggleFemalePortrait = function (name) {
   let femSrc =
     typeof charPortraitsFemale !== "undefined" ? charPortraitsFemale[name] : "";
   if (!femSrc) return;
-  let arr = femSrc.split("|");
+  let arr = splitPortraitUrls(femSrc);
   let c = document.querySelector(
     `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
   );
@@ -349,15 +526,21 @@ window.toggleFemalePortrait = function (name) {
   if (img && arr.includes(img.dataset.src)) {
     let cp = {};
     try {
-      let s = localStorage.getItem("daoyuan_custom_portraits");
+      let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
       if (s) cp = JSON.parse(s);
     } catch (e) {}
     let base =
       cp[name] ||
       (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
-    window.updatePortraitView(name, base ? base.split("|")[0] : "");
+    window.updatePortraitView(
+      name,
+      getIndexedPortrait(base, name, "normal") || "",
+    );
   } else {
-    window.updatePortraitView(name, arr[0]);
+    window.updatePortraitView(
+      name,
+      getIndexedPortrait(femSrc, name, "female") || "",
+    );
   }
 };
 window.executeShowLoreByName = async function (name) {
@@ -527,7 +710,7 @@ window.searchAndShowPortrait = function () {
   }
   let cp = {};
   try {
-    let s = localStorage.getItem("daoyuan_custom_portraits");
+    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
     if (s) cp = JSON.parse(s);
   } catch (e) {}
   let all = new Set();
@@ -665,28 +848,26 @@ window.injectHeartButtons = function () {
 /* 获取立绘URL（支持多图切换和玉简同步） */
 window.getPortraitUrl = function(name, gender) {
   try {
-    const saved = localStorage.getItem("daoyuan_custom_portraits");
+    const saved = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
     if (saved) {
       const cp = JSON.parse(saved);
-      if (cp[name]) return cp[name].split("|")[0];
+      if (cp[name]) return getIndexedPortrait(cp[name], name, "normal");
     }
   } catch (e) {}
   if (charPortraitsFemale[name] && gender && /^女/.test(gender)) {
-    return String(charPortraitsFemale[name]).split("|")[0];
+    return getIndexedPortrait(charPortraitsFemale[name], name, "female");
   }
   return charPortraits[name]
-    ? String(charPortraits[name]).split("|")[0]
+    ? getIndexedPortrait(charPortraits[name], name, "normal")
     : undefined;
 }
 
 /* 保存自定义立绘到 localStorage */
-window.saveCustomPortrait = function (name, url) {
+window.saveCustomPortrait = function (name, url, mode = "normal") {
   try {
-    let customPortraits = {};
-    const saved = localStorage.getItem("daoyuan_custom_portraits");
-    if (saved) {
-      customPortraits = JSON.parse(saved);
-    }
+    const storageKey = PORTRAIT_CUSTOM_KEYS[mode];
+    if (!storageKey) throw new Error("未知立绘类型：" + mode);
+    const customPortraits = readPortraitJson(storageKey, {});
     customPortraits[name] = url;
     const dataStr = JSON.stringify(customPortraits);
     if (url && url.startsWith("data:") && url.length > 2 * 1024 * 1024) {
@@ -709,11 +890,17 @@ window.saveCustomPortrait = function (name, url) {
       );
       return false;
     }
-    localStorage.setItem("daoyuan_custom_portraits", dataStr);
-    charPortraits[name] = url;
+    getPortraitStorage().setItem(storageKey, dataStr);
+    setExplicitCustom(name, mode, true);
+    setPortraitIndex(name, mode, 0);
+    if (mode === "normal") charPortraits[name] = url;
+    else if (mode === "female") charPortraitsFemale[name] = url;
+    else window.specialPortraits[name] = url;
     if (typeof window.populateCharacterData === "function") {
       window.populateCharacterData();
     }
+    refreshVisiblePortraitSearch();
+    window.updatePortraitView(name, splitPortraitUrls(url)[0] || "");
     return true;
   } catch (e) {
     console.warn("[道渊] 保存自定义立绘失败:", e);
@@ -764,21 +951,34 @@ window.handlePortraitFileUpload = function (fileInput, charName) {
 };
 
 /* 删除自定义立绘（恢复默认） */
-window.removeCustomPortrait = function (name) {
+window.removeCustomPortrait = function (name, mode = "normal") {
   try {
-    let customPortraits = {};
-    const saved = localStorage.getItem("daoyuan_custom_portraits");
-    if (saved) {
-      customPortraits = JSON.parse(saved);
-    }
+    const storageKey = PORTRAIT_CUSTOM_KEYS[mode];
+    if (!storageKey) throw new Error("未知立绘类型：" + mode);
+    const customPortraits = readPortraitJson(storageKey, {});
     delete customPortraits[name];
-    localStorage.setItem(
-      "daoyuan_custom_portraits",
-      JSON.stringify(customPortraits),
-    );
+    writePortraitJson(storageKey, customPortraits);
+    setExplicitCustom(name, mode, false);
+    setPortraitIndex(name, mode, 0);
+
+    if (mode === "normal") {
+      if (defaultCharPortraits[name])
+        charPortraits[name] = defaultCharPortraits[name];
+      else delete charPortraits[name];
+    } else if (mode === "female") {
+      if (defaultCharPortraitsFemale[name])
+        charPortraitsFemale[name] = defaultCharPortraitsFemale[name];
+      else delete charPortraitsFemale[name];
+    } else {
+      if (defaultSpecialPortraits[name])
+        window.specialPortraits[name] = defaultSpecialPortraits[name];
+      else delete window.specialPortraits[name];
+    }
+
     if (typeof window.populateCharacterData === "function") {
       window.populateCharacterData();
     }
+    refreshVisiblePortraitSearch();
     return true;
   } catch (e) {
     console.warn("[道渊] 删除自定义立绘失败:", e);
@@ -797,10 +997,8 @@ window.openCustomPortraitDialog = function (charName, mode) {
   if (mode === "special") currentUrl = window.specialPortraits[charName] || "";
   var isCustom = false;
   try {
-    var key = "daoyuan_custom_portraits";
-    if (mode === "female") key = "daoyuan_custom_portraits_female";
-    if (mode === "special") key = "daoyuan_custom_portraits_special";
-    var saved = localStorage.getItem(key);
+    var key = PORTRAIT_CUSTOM_KEYS[mode];
+    var saved = getPortraitStorage().getItem(key);
     if (saved) {
       var cp = JSON.parse(saved);
       isCustom = cp.hasOwnProperty(charName);
@@ -934,30 +1132,10 @@ window.openCustomPortraitDialog = function (charName, mode) {
       }
       var finalUrl =
         mode === "normal" ? validUrls.join("|") : validUrls[0].split("|")[0];
-      if (mode === "normal") {
-        if (window.saveCustomPortrait(charName, finalUrl)) {
-          modal.remove();
-        } else {
-          alert("保存失败，请重试");
-        }
+      if (window.saveCustomPortrait(charName, finalUrl, mode)) {
+        modal.remove();
       } else {
-        try {
-          var k =
-            mode === "female"
-              ? "daoyuan_custom_portraits_female"
-              : "daoyuan_custom_portraits_special";
-          let cp = {};
-          const s = localStorage.getItem(k);
-          if (s) cp = JSON.parse(s);
-          cp[charName] = finalUrl;
-          localStorage.setItem(k, JSON.stringify(cp));
-          if (mode === "female") charPortraitsFemale[charName] = finalUrl;
-          else window.specialPortraits[charName] = finalUrl;
-          window.updatePortraitView(charName, validUrls[0]);
-          modal.remove();
-        } catch (ex) {
-          alert("保存失败：" + ex.message);
-        }
+        alert("保存失败，请重试");
       }
     });
   modal
@@ -969,23 +1147,7 @@ window.openCustomPortraitDialog = function (charName, mode) {
   if (resetBtn) {
     resetBtn.addEventListener("click", function () {
       if (confirm("确定要恢复默认立绘吗？")) {
-        if (mode === "normal") {
-          window.removeCustomPortrait(charName);
-        } else {
-          var k =
-            mode === "female"
-              ? "daoyuan_custom_portraits_female"
-              : "daoyuan_custom_portraits_special";
-          try {
-            let cp = {};
-            const s = localStorage.getItem(k);
-            if (s) cp = JSON.parse(s);
-            delete cp[charName];
-            localStorage.setItem(k, JSON.stringify(cp));
-          } catch (ex) {}
-        }
-        modal.remove();
-        if (confirm("是否立即刷新页面以生效？")) location.reload();
+        if (window.removeCustomPortrait(charName, mode)) modal.remove();
       }
     });
   }
@@ -1001,12 +1163,21 @@ window.openCustomPortraitDialog = function (charName, mode) {
       document.body.removeChild(cm);
     };
     document.getElementById("c-yes").onclick = function () {
-      localStorage.removeItem("daoyuan_custom_portraits");
-      localStorage.removeItem("daoyuan_custom_portraits_female");
-      localStorage.removeItem("daoyuan_custom_portraits_special");
+      const storage = getPortraitStorage();
+      Object.values(PORTRAIT_CUSTOM_KEYS).forEach((key) =>
+        storage.removeItem(key),
+      );
+      storage.removeItem(PORTRAIT_EXPLICIT_CUSTOM_KEY);
+      storage.removeItem(PORTRAIT_INDEX_KEY);
       document.body.removeChild(cm);
       modal.remove();
-      alert("所有自定义立绘已重置！请刷新页面生效。");
+      window.loadRemotePortraits().then(() => {
+        if (typeof window.populateCharacterData === "function") {
+          window.populateCharacterData();
+        }
+        refreshVisiblePortraitSearch();
+        alert("所有自定义立绘已重置并恢复为当前云端默认立绘！");
+      });
     };
   });
   modal.addEventListener("click", function (e) {
