@@ -1,5 +1,33 @@
 import { initTabNavigation } from "./maps.js";
 
+window.refreshUserAvatar = function () {
+  const userAvatarElement = document.querySelector(".user_avatar");
+  if (!userAvatarElement) return;
+
+  let avatarUrl = "";
+  if (typeof window.getPersonaAvatarPath === "function") {
+    avatarUrl = window.getPersonaAvatarPath("current") || "";
+  }
+
+  if (!avatarUrl) {
+    const tavernDocument = window.parent?.document;
+    avatarUrl =
+      tavernDocument
+        ?.querySelector("#user_avatar_block .avatar-container.selected img")
+        ?.getAttribute("src") || "";
+  }
+
+  if (avatarUrl) {
+    avatarUrl = new URL(
+      avatarUrl,
+      window.parent?.location?.href || document.baseURI,
+    ).href;
+    userAvatarElement.style.backgroundImage = `url(${JSON.stringify(avatarUrl)})`;
+  } else {
+    userAvatarElement.style.removeProperty("background-image");
+  }
+};
+
 async function init() {
   /* 拉取云端立绘 */
   await window.loadRemotePortraits();
@@ -194,12 +222,9 @@ async function init() {
       if (e.target === promptOverlay) promptOverlay.style.display = "none";
     };
 
-  const avatarUrl =
-    window.parent.document.querySelector("#user_avatar_image")?.src;
-  const userAvatarElement = document.querySelector(".user_avatar");
-  if (userAvatarElement && avatarUrl) {
-    userAvatarElement.style.backgroundImage = `url('${avatarUrl}')`;
-  }
+  window.refreshUserAvatar();
+  window.eventOn("persona_changed", window.refreshUserAvatar);
+  window.eventOn("persona_updated", window.refreshUserAvatar);
 
   initTabNavigation();
 
