@@ -12,6 +12,30 @@ const legacyOutputPath = path.join(
   projectRoot,
   "dist/daoyuan-floating-mvu.js",
 );
+const floatingPetAssetDir = path.join(
+  projectRoot,
+  "src/assets/floating-pet",
+);
+const floatingPetAssetFiles = {
+  idle: "idle.webp",
+  press: "press.webp",
+  drag: "drag.webp",
+  open: "open.webp",
+  close: "close.webp",
+};
+
+const floatingPetAssets = Object.fromEntries(
+  Object.entries(floatingPetAssetFiles).map(([state, filename]) => {
+    const assetPath = path.join(floatingPetAssetDir, filename);
+    if (!fs.existsSync(assetPath)) {
+      throw new Error(`Floating pet asset not found at ${assetPath}`);
+    }
+    return [
+      state,
+      `data:image/webp;base64,${fs.readFileSync(assetPath).toString("base64")}`,
+    ];
+  }),
+);
 
 if (!fs.existsSync(distHtmlPath)) {
   throw new Error(
@@ -204,17 +228,25 @@ body{margin:0!important;padding:0!important;}
   );
 }
 
-function floatingMvuRuntime(uiHtml) {
+function floatingMvuRuntime(uiHtml, petAssets) {
   "use strict";
 
   const ROOT_ID = "daoyuan-floating-mvu-root";
   const LAUNCHER_ID = "daoyuan-floating-mvu-launcher";
+  const PET_STYLE_ID = "daoyuan-floating-mvu-pet-style";
   const CLEANUP_KEY = "__daoyuanFloatingMvuCleanup";
   const LAYOUT_KEY = "daoyuan-floating-mvu-layout-v3";
-  const LAUNCHER_SIZE = 40;
   const DRAG_THRESHOLD = 5;
   const MIN_WIDTH = 320;
   const MIN_HEIGHT = 192;
+  const PET_BUBBLE_TEXT = Object.freeze({
+    update: "嗯？命数动了。",
+    press: "莫敲头。 (눈_눈)",
+    open: "来，给你看。",
+    close: "有事再唤我。",
+    drag: "……放手。",
+    danger: "站我身后。",
+  });
   const scriptWindow = window;
   const tavernWindow = window.parent || window;
   const tavernDocument = tavernWindow.document;
@@ -227,11 +259,18 @@ function floatingMvuRuntime(uiHtml) {
   let status = null;
   let viewport = null;
   let launcher = null;
+  let petImage = null;
+  let petNoticeBubble = null;
   let panelDragHandle = null;
   let resizeHandles = [];
   let collapsed = false;
   let manualSize = false;
   let layoutState = null;
+  let petStateTimer = null;
+  let petTransitionTimer = null;
+  let petBubbleTimer = null;
+  let petPressStartedAt = 0;
+  let panelVisibilityTimer = null;
 
   function bindHostFunction(name) {
     const candidate = scriptWindow[name];
@@ -260,6 +299,10 @@ function floatingMvuRuntime(uiHtml) {
     if (disposed) return;
     disposed = true;
     clearTimeout(refreshTimer);
+    clearTimeout(petStateTimer);
+    clearTimeout(petTransitionTimer);
+    clearTimeout(petBubbleTimer);
+    clearTimeout(panelVisibilityTimer);
     while (stopHandles.length > 0) {
       const stop = stopHandles.pop();
       try {
@@ -270,6 +313,7 @@ function floatingMvuRuntime(uiHtml) {
     }
     if (root && root.isConnected) root.remove();
     if (launcher && launcher.isConnected) launcher.remove();
+    tavernDocument.getElementById(PET_STYLE_ID)?.remove();
     if (tavernWindow[CLEANUP_KEY] === cleanup) {
       delete tavernWindow[CLEANUP_KEY];
     }
@@ -323,23 +367,70 @@ function floatingMvuRuntime(uiHtml) {
     };
   }
 
+  function getPreferredLauncherSize() {
+    const viewportSize = getViewportSize();
+    const coarsePointer =
+      typeof tavernWindow.matchMedia === "function" &&
+      tavernWindow.matchMedia("(pointer: coarse)").matches;
+    return coarsePointer || viewportSize.width <= 640
+      ? { width: 48.96, height: 65.28 }
+      : { width: 66, height: 88 };
+  }
+
+  function getLauncherSize() {
+    if (launcher?.isConnected) {
+      const rect = launcher.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return { width: rect.width, height: rect.height };
+      }
+    }
+    return getPreferredLauncherSize();
+  }
+
+  function applyLauncherSize() {
+    if (!launcher) return;
+    const size = getPreferredLauncherSize();
+    launcher.style.width = `${size.width}px`;
+    launcher.style.height = `${size.height}px`;
+  }
+
+  function positionPetNoticeBubble() {
+    if (!launcher || !petNoticeBubble) return;
+    const viewportSize = getViewportSize();
+    const rect = launcher.getBoundingClientRect();
+    const bubbleWidth = Math.max(
+      petNoticeBubble.getBoundingClientRect().width,
+      80,
+    );
+    const hasRoomOnRight =
+      rect.left + rect.width * 0.68 + bubbleWidth + 4 <= viewportSize.width;
+    petNoticeBubble.style.left = hasRoomOnRight ? "68%" : "auto";
+    petNoticeBubble.style.right = hasRoomOnRight ? "auto" : "68%";
+    petNoticeBubble.style.borderRadius = hasRoomOnRight
+      ? "9px 9px 9px 3px"
+      : "9px 9px 3px 9px";
+  }
+
   function positionLauncher() {
     if (!launcher || !layoutState) return;
     const viewportSize = getViewportSize();
+    const launcherSize = getLauncherSize();
     launcher.style.left = `${clamp(
       layoutState.launcherLeft,
       4,
-      viewportSize.width - LAUNCHER_SIZE - 4,
+      viewportSize.width - launcherSize.width - 4,
     )}px`;
     launcher.style.top = `${clamp(
       layoutState.launcherTop,
       4,
-      viewportSize.height - LAUNCHER_SIZE - 4,
+      viewportSize.height - launcherSize.height - 4,
     )}px`;
+    positionPetNoticeBubble();
   }
 
   function loadLayout() {
     const viewportSize = getViewportSize();
+    const launcherSize = getPreferredLauncherSize();
     const defaultWidth = Math.min(820, viewportSize.width - 24);
     const defaultHeight = Math.min(650, viewportSize.height - 24);
     let saved = {};
@@ -383,14 +474,14 @@ function floatingMvuRuntime(uiHtml) {
           ? Number(saved.launcherLeft)
           : 16,
         4,
-        viewportSize.width - LAUNCHER_SIZE - 4,
+        viewportSize.width - launcherSize.width - 4,
       ),
       launcherTop: clamp(
         Number.isFinite(Number(saved.launcherTop))
           ? Number(saved.launcherTop)
           : Math.round(viewportSize.height * 0.4),
         4,
-        viewportSize.height - LAUNCHER_SIZE - 4,
+        viewportSize.height - launcherSize.height - 4,
       ),
       collapsed: saved.collapsed === true,
       manualSize: saved.manualSize === true,
@@ -446,14 +537,168 @@ function floatingMvuRuntime(uiHtml) {
     positionLauncher();
   }
 
-  function setCollapsed(nextCollapsed, shouldPersist = true) {
-    if (!root || !launcher) return;
-    collapsed = nextCollapsed;
-    root.style.visibility = collapsed ? "hidden" : "visible";
-    root.style.pointerEvents = collapsed ? "none" : "auto";
+  const petAnimations = {
+    idle: "dy-pet-idle 3.2s ease-in-out infinite",
+    press: "dy-pet-press .38s cubic-bezier(.2,.9,.25,1) both",
+    drag: "dy-pet-drag .72s ease-in-out infinite",
+    open: "dy-pet-open .68s cubic-bezier(.16,1,.3,1) both",
+    close: "dy-pet-close .56s cubic-bezier(.4,0,.2,1) both",
+    release: "dy-pet-release .58s cubic-bezier(.2,.9,.25,1) both",
+  };
+
+  function setPetState(state, duration = 0) {
+    if (!launcher || !petImage) return;
+    clearTimeout(petStateTimer);
+    const assetState = state === "release" ? "idle" : state;
+    petImage.src = petAssets[assetState] || petAssets.idle;
+    launcher.dataset.petState = state;
+    petImage.style.animation = "none";
+    void petImage.offsetWidth;
+    petImage.style.animation = petAnimations[state] || petAnimations.idle;
+    if (duration > 0) {
+      petStateTimer = tavernWindow.setTimeout(() => {
+        setPetState("idle");
+      }, duration);
+    }
+  }
+
+  function updateLauncherAccessibility() {
+    if (!launcher) return;
+    const hasUpdates = launcher.dataset.hasUpdates === "true";
+    const hasDanger = launcher.dataset.hasDanger === "true";
     launcher.title = collapsed ? "显示道渊状态栏" : "隐藏道渊状态栏";
-    launcher.setAttribute("aria-label", launcher.title);
+    launcher.setAttribute(
+      "aria-label",
+      hasDanger
+        ? "道渊检测到危险，点击查看"
+        : hasUpdates
+          ? "道渊状态有新变化，点击查看"
+          : launcher.title,
+    );
     launcher.setAttribute("aria-expanded", String(!collapsed));
+  }
+
+  function isDangerousMvuData(data) {
+    const dangerLevel = String(
+      data?.stat_data?.世界?.危机程度 ?? "",
+    );
+    return dangerLevel.includes("高") || dangerLevel.includes("致命");
+  }
+
+  function hidePetBubble() {
+    if (!launcher || !petNoticeBubble) return;
+    clearTimeout(petBubbleTimer);
+    petBubbleTimer = null;
+    launcher.dataset.bubbleVisible = "false";
+    petNoticeBubble.setAttribute("aria-hidden", "true");
+  }
+
+  function restorePetBubbleAfterAction() {
+    petBubbleTimer = null;
+    if (launcher?.dataset.hasUpdates === "true") {
+      petNoticeBubble.textContent =
+        launcher.dataset.hasDanger === "true"
+          ? PET_BUBBLE_TEXT.danger
+          : PET_BUBBLE_TEXT.update;
+      launcher.dataset.bubbleVisible = "true";
+      petNoticeBubble.setAttribute("aria-hidden", "false");
+      positionPetNoticeBubble();
+    } else {
+      hidePetBubble();
+    }
+  }
+
+  function showPetBubble(text, duration = 0) {
+    if (!launcher || !petNoticeBubble) return;
+    clearTimeout(petBubbleTimer);
+    petBubbleTimer = null;
+    petNoticeBubble.textContent = text;
+    launcher.dataset.bubbleVisible = "true";
+    petNoticeBubble.setAttribute("aria-hidden", "false");
+    positionPetNoticeBubble();
+    if (duration > 0) {
+      petBubbleTimer = tavernWindow.setTimeout(
+        restorePetBubbleAfterAction,
+        duration,
+      );
+    }
+  }
+
+  function setPetUpdateNotice(active, danger = false) {
+    if (!launcher || !petNoticeBubble) return;
+    launcher.dataset.hasUpdates = String(active);
+    launcher.dataset.hasDanger = String(active && danger);
+    launcher.style.filter =
+      active && danger
+        ? "drop-shadow(0 3px 4px rgba(0,0,0,.72)) drop-shadow(0 0 8px rgba(255,78,78,.8)) drop-shadow(0 0 15px rgba(232,180,58,.52))"
+        : active
+          ? "drop-shadow(0 3px 4px rgba(0,0,0,.72)) drop-shadow(0 0 8px rgba(92,196,255,.82)) drop-shadow(0 0 15px rgba(118,232,216,.48))"
+          : "drop-shadow(0 3px 4px rgba(0,0,0,.72)) drop-shadow(0 0 5px rgba(218,171,60,.22))";
+    if (active) {
+      showPetBubble(
+        danger ? PET_BUBBLE_TEXT.danger : PET_BUBBLE_TEXT.update,
+      );
+    } else {
+      hidePetBubble();
+    }
+    updateLauncherAccessibility();
+  }
+
+  function setCollapsed(
+    nextCollapsed,
+    shouldPersist = true,
+    shouldAnimate = true,
+    petAnimationDelay = 0,
+  ) {
+    if (!root || !launcher) return;
+    clearTimeout(panelVisibilityTimer);
+    clearTimeout(petTransitionTimer);
+    collapsed = nextCollapsed;
+    if (collapsed) {
+      root.style.pointerEvents = "none";
+      root.style.opacity = "0";
+      root.style.transform = "translateY(5px) scale(.975)";
+      panelVisibilityTimer = tavernWindow.setTimeout(() => {
+        if (collapsed && root) root.style.visibility = "hidden";
+      }, shouldAnimate ? 220 : 0);
+      if (shouldAnimate) {
+        if (petAnimationDelay > 0) {
+          petTransitionTimer = tavernWindow.setTimeout(
+            () => setPetState("close", 620),
+            petAnimationDelay,
+          );
+        } else {
+          setPetState("close", 620);
+        }
+      }
+    } else {
+      setPetUpdateNotice(false);
+      root.style.visibility = "visible";
+      root.style.pointerEvents = "auto";
+      if (shouldAnimate) {
+        root.style.opacity = "0";
+        root.style.transform = "translateY(5px) scale(.975)";
+        tavernWindow.requestAnimationFrame(() => {
+          if (!collapsed && root) {
+            root.style.opacity = "1";
+            root.style.transform = "translateY(0) scale(1)";
+          }
+        });
+        if (petAnimationDelay > 0) {
+          petTransitionTimer = tavernWindow.setTimeout(
+            () => setPetState("open", 740),
+            petAnimationDelay,
+          );
+        } else {
+          setPetState("open", 740);
+        }
+      } else {
+        root.style.opacity = "1";
+        root.style.transform = "translateY(0) scale(1)";
+        setPetState("idle");
+      }
+    }
+    updateLauncherAccessibility();
     if (shouldPersist) persistLayout();
   }
 
@@ -468,6 +713,7 @@ function floatingMvuRuntime(uiHtml) {
     }
     tavernDocument.getElementById(ROOT_ID)?.remove();
     tavernDocument.getElementById(LAUNCHER_ID)?.remove();
+    tavernDocument.getElementById(PET_STYLE_ID)?.remove();
     tavernWindow[CLEANUP_KEY] = cleanup;
     layoutState = loadLayout();
     manualSize = layoutState.manualSize;
@@ -493,16 +739,94 @@ function floatingMvuRuntime(uiHtml) {
       "background:transparent",
       "box-shadow:0 12px 34px rgba(0,0,0,.46),0 0 14px rgba(211,169,72,.055)",
       "pointer-events:auto",
+      "opacity:1",
+      "transform:translateY(0) scale(1)",
+      "transform-origin:center center",
+      "transition:opacity .22s ease,transform .22s ease",
     ].join(";");
+
+    const petStyle = tavernDocument.createElement("style");
+    petStyle.id = PET_STYLE_ID;
+    petStyle.textContent = `
+@keyframes dy-pet-idle {
+  0%,100% { transform:translate3d(0,0,0) rotate(-.8deg) scale(1); }
+  48% { transform:translate3d(0,-3px,0) rotate(.9deg) scale(1.012); }
+}
+@keyframes dy-pet-press {
+  0% { transform:translate3d(0,0,0) scale(1); }
+  22% { transform:translate3d(0,3px,0) scale(.88,1.08); }
+  55% { transform:translate3d(0,-2px,0) scale(1.04,.96); }
+  100% { transform:translate3d(0,1px,0) scale(.97); }
+}
+@keyframes dy-pet-drag {
+  0%,100% { transform:translate3d(0,-5px,0) rotate(var(--dy-pet-drag-tilt,0deg)) scale(1.025); }
+  50% { transform:translate3d(0,-2px,0) rotate(0deg) scale(1.018); }
+}
+@keyframes dy-pet-open {
+  0% { transform:translate3d(0,5px,0) rotate(-5deg) scale(.82); opacity:.7; }
+  44% { transform:translate3d(0,-9px,0) rotate(4deg) scale(1.08); opacity:1; }
+  72% { transform:translate3d(0,1px,0) rotate(-1.5deg) scale(.98); }
+  100% { transform:translate3d(0,0,0) rotate(0) scale(1); }
+}
+@keyframes dy-pet-close {
+  0% { transform:translate3d(0,0,0) scale(1); opacity:1; }
+  42% { transform:translate3d(0,3px,0) scale(.91,1.07); opacity:1; }
+  100% { transform:translate3d(0,6px,0) rotate(-3deg) scale(.84); opacity:.78; }
+}
+@keyframes dy-pet-release {
+  0% { transform:translate3d(0,-5px,0) scale(1.02,.98); }
+  38% { transform:translate3d(0,2px,0) scale(.97,1.035); }
+  70% { transform:translate3d(0,-1px,0) scale(1.015,.99); }
+  100% { transform:translate3d(0,0,0) scale(1); }
+}
+@keyframes dy-pet-update-bubble {
+  0%,100% { transform:translateY(0) scale(1); }
+  45% { transform:translateY(-3px) scale(1.04); }
+}
+#${LAUNCHER_ID}[data-pet-state="idle"]:hover img {
+  filter:drop-shadow(0 0 7px rgba(236,190,73,.62)) brightness(1.06);
+}
+#${LAUNCHER_ID}[data-pet-state="drag"] img {
+  filter:drop-shadow(0 8px 6px rgba(0,0,0,.58)) drop-shadow(0 0 6px rgba(104,204,255,.2)) brightness(1.025);
+}
+#${LAUNCHER_ID} .dy-pet-update-bubble {
+  opacity:0;
+  transform:translateY(3px) scale(.9);
+  transition:opacity .18s ease,transform .18s ease;
+}
+#${LAUNCHER_ID}[data-bubble-visible="true"] .dy-pet-update-bubble {
+  opacity:1;
+  transform:translateY(0) scale(1);
+  animation:dy-pet-update-bubble 1.35s ease-in-out infinite;
+}
+#${LAUNCHER_ID}:focus-visible {
+  outline:2px solid rgba(245,205,101,.9) !important;
+  outline-offset:2px !important;
+  border-radius:16px;
+}
+@media (pointer:coarse), (max-width:640px) {
+  @keyframes dy-pet-idle {
+    0%,100% { transform:translate3d(0,0,0) rotate(-.45deg) scale(1); }
+    50% { transform:translate3d(0,-2px,0) rotate(.45deg) scale(1.008); }
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  #${LAUNCHER_ID} img { animation-duration:.01ms !important; animation-iteration-count:1 !important; }
+}
+`;
+    (tavernDocument.head || tavernDocument.documentElement).appendChild(
+      petStyle,
+    );
 
     launcher = tavernDocument.createElement("button");
     launcher.id = LAUNCHER_ID;
     launcher.type = "button";
-    launcher.textContent = "玖";
+    launcher.dataset.petState = "idle";
+    launcher.dataset.hasUpdates = "false";
+    launcher.dataset.hasDanger = "false";
+    launcher.dataset.bubbleVisible = "false";
     launcher.style.cssText = [
       "position:fixed",
-      `width:${LAUNCHER_SIZE}px`,
-      `height:${LAUNCHER_SIZE}px`,
       "box-sizing:border-box",
       "display:flex",
       "align-items:center",
@@ -510,21 +834,68 @@ function floatingMvuRuntime(uiHtml) {
       "z-index:2147483002",
       "padding:0",
       "margin:0",
-      "overflow:hidden",
-      "border:1px solid rgba(229,190,89,.72)",
+      "overflow:visible",
+      "border:0",
       "outline:0",
-      "border-radius:50%",
-      "background:radial-gradient(circle at 35% 28%,rgba(69,55,28,.96),rgba(10,10,13,.98) 68%)",
-      "color:#f0cf78",
-      "font:700 22px/1 'Noto Serif SC','Songti SC','SimSun',serif",
-      "text-shadow:0 0 7px rgba(236,190,73,.48)",
-      "box-shadow:inset 0 0 0 1px rgba(255,225,145,.08),0 0 12px rgba(225,183,75,.24),0 3px 10px rgba(0,0,0,.56)",
+      "border-radius:16px",
+      "background:transparent",
+      "filter:drop-shadow(0 3px 4px rgba(0,0,0,.72)) drop-shadow(0 0 5px rgba(218,171,60,.22))",
       "cursor:grab",
       "touch-action:none",
       "user-select:none",
       "-webkit-user-select:none",
       "-webkit-tap-highlight-color:transparent",
     ].join(";");
+    applyLauncherSize();
+
+    petImage = tavernDocument.createElement("img");
+    petImage.src = petAssets.idle;
+    petImage.alt = "";
+    petImage.draggable = false;
+    petImage.setAttribute("aria-hidden", "true");
+    petImage.style.cssText = [
+      "display:block",
+      "width:100%",
+      "height:100%",
+      "object-fit:contain",
+      "pointer-events:none",
+      "user-select:none",
+      "-webkit-user-select:none",
+      "-webkit-user-drag:none",
+      "transform-origin:50% 46%",
+      "will-change:transform,opacity,filter",
+      "animation:dy-pet-idle 3.2s ease-in-out infinite",
+      "transition:filter .18s ease",
+    ].join(";");
+
+    petNoticeBubble = tavernDocument.createElement("span");
+    petNoticeBubble.className = "dy-pet-update-bubble";
+    petNoticeBubble.textContent = PET_BUBBLE_TEXT.update;
+    petNoticeBubble.setAttribute("aria-hidden", "true");
+    petNoticeBubble.style.cssText = [
+      "position:absolute",
+      "top:-11px",
+      "left:68%",
+      "z-index:2",
+      "box-sizing:border-box",
+      "min-width:48px",
+      "padding:2px 6px",
+      "border:1px solid rgba(104,204,255,.78)",
+      "border-radius:9px 9px 9px 3px",
+      "background:linear-gradient(145deg,rgba(16,29,39,.97),rgba(11,15,22,.98))",
+      "box-shadow:0 2px 8px rgba(0,0,0,.55),0 0 8px rgba(79,186,255,.28)",
+      "color:#d8f5ff",
+      "font:700 10px/1.25 sans-serif",
+      "letter-spacing:-.5px",
+      "white-space:nowrap",
+      "pointer-events:none",
+    ].join(";");
+    launcher.append(petImage, petNoticeBubble);
+
+    Object.values(petAssets).forEach(source => {
+      const preload = new tavernWindow.Image();
+      preload.src = source;
+    });
 
     viewport = tavernDocument.createElement("div");
     viewport.id = "daoyuan-floating-mvu-viewport";
@@ -703,6 +1074,13 @@ function floatingMvuRuntime(uiHtml) {
         moved: false,
       };
       launcher.style.cursor = "grabbing";
+      clearTimeout(petTransitionTimer);
+      setPetState("press");
+      petPressStartedAt =
+        typeof tavernWindow.performance?.now === "function"
+          ? tavernWindow.performance.now()
+          : Date.now();
+      showPetBubble(PET_BUBBLE_TEXT.press, 1100);
       launcher.setPointerCapture?.(event.pointerId);
     });
 
@@ -712,7 +1090,26 @@ function floatingMvuRuntime(uiHtml) {
         event.preventDefault();
         return;
       }
-      togglePanel();
+      const now =
+        typeof tavernWindow.performance?.now === "function"
+          ? tavernWindow.performance.now()
+          : Date.now();
+      if (launcher.dataset.petState !== "press") {
+        setPetState("press");
+        petPressStartedAt = now;
+        showPetBubble(PET_BUBBLE_TEXT.press, 1100);
+      }
+      const nextCollapsed = !collapsed;
+      const pressTimeRemaining = Math.max(0, 380 - (now - petPressStartedAt));
+      clearTimeout(petTransitionTimer);
+      petTransitionTimer = tavernWindow.setTimeout(() => {
+        petTransitionTimer = null;
+        setCollapsed(nextCollapsed, true, true);
+        showPetBubble(
+          nextCollapsed ? PET_BUBBLE_TEXT.close : PET_BUBBLE_TEXT.open,
+          1600,
+        );
+      }, pressTimeRemaining);
     });
 
     listen(panelDragHandle, "pointerdown", event => {
@@ -769,19 +1166,29 @@ function floatingMvuRuntime(uiHtml) {
         if (
           Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD
         ) {
+          if (!dragSession.moved) {
+            setPetState("drag");
+            showPetBubble(PET_BUBBLE_TEXT.drag);
+          }
           dragSession.moved = true;
         }
         const viewportSize = getViewportSize();
+        const launcherSize = getLauncherSize();
+        launcher.style.setProperty(
+          "--dy-pet-drag-tilt",
+          `${clamp(deltaX / 12, -7, 7)}deg`,
+        );
         launcher.style.left = `${clamp(
           dragSession.left + deltaX,
           4,
-          viewportSize.width - LAUNCHER_SIZE - 4,
+          viewportSize.width - launcherSize.width - 4,
         )}px`;
         launcher.style.top = `${clamp(
           dragSession.top + deltaY,
           4,
-          viewportSize.height - LAUNCHER_SIZE - 4,
+          viewportSize.height - launcherSize.height - 4,
         )}px`;
+        positionPetNoticeBubble();
       }
       if (panelDragSession?.pointerId === event.pointerId) {
         const viewportSize = getViewportSize();
@@ -851,8 +1258,17 @@ function floatingMvuRuntime(uiHtml) {
     const finishPointerAction = event => {
       if (dragSession?.pointerId === event.pointerId) {
         suppressLauncherClick = dragSession.moved;
+        const didMove = dragSession.moved;
         dragSession = null;
         launcher.style.cursor = "grab";
+        launcher.style.setProperty("--dy-pet-drag-tilt", "0deg");
+        if (didMove) {
+          setPetState("release", 620);
+          restorePetBubbleAfterAction();
+        } else if (event.type === "pointercancel") {
+          setPetState("idle");
+          restorePetBubbleAfterAction();
+        }
         persistLayout();
       }
       if (panelDragSession?.pointerId === event.pointerId) {
@@ -877,6 +1293,7 @@ function floatingMvuRuntime(uiHtml) {
     listen(tavernWindow, "pointerup", finishPointerAction);
     listen(tavernWindow, "pointercancel", finishPointerAction);
     listen(tavernWindow, "resize", () => {
+      applyLauncherSize();
       clampRootToViewport();
       persistLayout();
     });
@@ -884,7 +1301,7 @@ function floatingMvuRuntime(uiHtml) {
 
     collapsed = false;
     clampRootToViewport();
-    setCollapsed(layoutState.collapsed, false);
+    setCollapsed(layoutState.collapsed, false, false);
   }
 
   function getLatestAssistantMessageId() {
@@ -1028,12 +1445,16 @@ function floatingMvuRuntime(uiHtml) {
       },
       eventOn: (eventType, listener) => {
         const wrapped = (...args) => {
-          if (
-            eventType === scriptWindow.Mvu.events.VARIABLE_UPDATE_ENDED &&
-            args[0] &&
-            typeof args[0] === "object"
-          ) {
-            latestMvuData = args[0];
+          if (eventType === scriptWindow.Mvu.events.VARIABLE_UPDATE_ENDED) {
+            if (args[0] && typeof args[0] === "object") {
+              latestMvuData = args[0];
+            }
+            if (collapsed) {
+              setPetUpdateNotice(
+                true,
+                isDangerousMvuData(args[0] || latestMvuData),
+              );
+            }
           }
           return listener(...args);
         };
@@ -1121,11 +1542,12 @@ const serializedUiHtml = JSON.stringify(uiHtml).replace(
   /<\/script/gi,
   "<\\/script",
 );
+const serializedPetAssets = JSON.stringify(floatingPetAssets);
 const scriptContent = `/*
  * 道渊 MVU 悬浮状态栏
  * 由 pnpm build:floating-mvu 自动生成，请勿直接修改此文件。
  */
-(${floatingMvuRuntime.toString()})(${serializedUiHtml});
+(${floatingMvuRuntime.toString()})(${serializedUiHtml},${serializedPetAssets});
 `;
 
 const output = {
