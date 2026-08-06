@@ -1323,8 +1323,7 @@ window.appendChatMessage = async function (charName, sender, content) {
           type: "message",
           message_id: targetMsgId,
         });
-        if (typeof window.populateCharacterData === "function")
-          window.populateCharacterData();
+        await window.notifyDaoyuanMvuChanged(fullData);
       }
     } else {
       console.warn("MVU 未初始化");

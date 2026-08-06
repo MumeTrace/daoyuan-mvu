@@ -80,6 +80,7 @@ const bootstrapSource = String.raw`
   window.Mvu = bridge.Mvu;
   window.waitGlobalInitialized = bridge.waitGlobalInitialized;
   window.eventOn = bridge.eventOn;
+  window.eventEmit = bridge.api.eventEmit;
   window.errorCatched = bridge.api.errorCatched;
   window.getAllVariables = bridge.getLatestMvuData;
 
@@ -236,6 +237,7 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   const PET_STYLE_ID = "daoyuan-floating-mvu-pet-style";
   const CLEANUP_KEY = "__daoyuanFloatingMvuCleanup";
   const LAYOUT_KEY = "daoyuan-floating-mvu-layout-v3";
+  const MANUAL_UPDATE_EVENT = "daoyuan_mvu_manual_updated";
   const DRAG_THRESHOLD = 5;
   const MIN_WIDTH = 320;
   const MIN_HEIGHT = 192;
@@ -1402,6 +1404,15 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     const mvuProxy = new Proxy(scriptWindow.Mvu, {
       get(target, property) {
         const value = Reflect.get(target, property);
+        if (property === "replaceMvuData" && typeof value === "function") {
+          return async (mvuData, options) => {
+            const result = await value.call(target, mvuData, options);
+            if (mvuData && typeof mvuData === "object") {
+              latestMvuData = mvuData;
+            }
+            return result;
+          };
+        }
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
@@ -1410,6 +1421,7 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       "$",
       "_",
       "errorCatched",
+      "eventEmit",
       "getLastMessageId",
       "getChatMessages",
       "getVariables",
@@ -1445,7 +1457,10 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       },
       eventOn: (eventType, listener) => {
         const wrapped = (...args) => {
-          if (eventType === scriptWindow.Mvu.events.VARIABLE_UPDATE_ENDED) {
+          if (
+            eventType === scriptWindow.Mvu.events.VARIABLE_UPDATE_ENDED ||
+            eventType === MANUAL_UPDATE_EVENT
+          ) {
             if (args[0] && typeof args[0] === "object") {
               latestMvuData = args[0];
             }

@@ -106,11 +106,6 @@ window.Mvu = {
   replaceMvuData: async function (fullData, options) {
     console.log('[Mock] Mvu.replaceMvuData', fullData, options);
     Object.assign(mockMvuData, fullData);
-
-    // 模拟数据保存后的 UI 更新触发
-    setTimeout(() => {
-      window.eventEmit(window.Mvu.events.VARIABLE_UPDATE_ENDED);
-    }, 100);
     return Promise.resolve();
   }
 };

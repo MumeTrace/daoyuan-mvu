@@ -79,6 +79,8 @@ const requiredMarkers = [
   "waitGlobalInitialized",
   "getMvuData",
   "replaceMvuData",
+  "daoyuan_mvu_manual_updated",
+  "eventEmit",
   "getPersonaAvatarPath",
   "getButtonEvent",
   "VARIABLE_UPDATE_ENDED",

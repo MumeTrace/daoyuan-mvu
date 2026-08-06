@@ -274,6 +274,7 @@ window.deleteSingleMessage = async function (charName, msgId) {
           type: "message",
           message_id: targetMsgId,
         });
+        await window.notifyDaoyuanMvuChanged(fullData);
 
         window.currentMessagesData[charName].历史记录 =
           fullData.stat_data.玉简[charName].历史记录;
@@ -317,6 +318,7 @@ window.retrySingleMessage = async function (charName, msgId) {
           type: "message",
           message_id: targetMsgId,
         });
+        await window.notifyDaoyuanMvuChanged(fullData);
 
         window.currentMessagesData[charName].历史记录 = historyObj;
         window.openChatView(charName);

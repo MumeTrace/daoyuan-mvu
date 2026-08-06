@@ -108,8 +108,11 @@ window.openChatView = function (name) {
   }, 50);
 };
 
-window.populateCharacterData = function() {
-  const all_variables = window.getAllVariables();
+window.populateCharacterData = function(variablesOverride) {
+  const all_variables =
+    variablesOverride && typeof variablesOverride === "object"
+      ? variablesOverride
+      : window.getAllVariables();
   const stat = _.get(all_variables, "stat_data", {});
 
   const world = stat.世界 || {};
@@ -835,7 +838,7 @@ async function deleteStatEntry(dataPath, cardElement) {
           type: "message",
           message_id: targetMsgId,
         });
-        window.populateCharacterData();
+        await window.notifyDaoyuanMvuChanged(fullData);
       }
     }
   } catch (err) {

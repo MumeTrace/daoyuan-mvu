@@ -262,8 +262,12 @@ async function init() {
   window.populateCharacterData();
 
   /* 监听变量更新事件，实现自动刷新 */
-  window.eventOn(window.Mvu.events.VARIABLE_UPDATE_ENDED, () => {
-    window.populateCharacterData();
+  window.eventOn(window.Mvu.events.VARIABLE_UPDATE_ENDED, (variables) => {
+    window.populateCharacterData(variables);
+  });
+
+  window.eventOn("daoyuan_mvu_manual_updated", (variables) => {
+    window.populateCharacterData(variables);
   });
 
   /* 绑定主角信息面板点击事件 (替换掉容易报错的内联写法) */
@@ -438,6 +442,17 @@ window.openJiuqiEditModal = function (path) {
     '\')" style="flex:1;background:linear-gradient(135deg,#9b59b6,#d980fa);color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-weight:bold;box-shadow:0 2px 10px rgba(217,128,250,0.4);transition:all 0.2s;" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'scale(1)\';">保存修改</button></div></div></div>';
   document.body.insertAdjacentHTML("beforeend", html);
 };
+window.notifyDaoyuanMvuChanged = async function (variables) {
+  if (typeof window.eventEmit === "function") {
+    try {
+      await window.eventEmit("daoyuan_mvu_manual_updated", variables);
+      return;
+    } catch (e) {
+      console.warn("[道渊] 广播手动变量更新失败，改为刷新当前状态栏:", e);
+    }
+  }
+  window.populateCharacterData(variables);
+};
 window.saveJiuqiEdit = async function (pathStr) {
   let path = pathStr.split("|");
   let inputs = document.querySelectorAll(".jiuqi-edit-input");
@@ -475,7 +490,7 @@ window.saveJiuqiEdit = async function (pathStr) {
           type: "message",
           message_id: targetMsgId,
         });
-        window.populateCharacterData();
+        await window.notifyDaoyuanMvuChanged(fullData);
         document.getElementById("jiuqi-edit-overlay").remove();
       }
     }
