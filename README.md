@@ -75,6 +75,22 @@ pnpm dev:tavern
 3. 确认功能后运行 `pnpm build`。
 4. 检查 `dist/regex-mvu.json`，将其导入或复制到 SillyTavern 的 MVU 正则脚本中验证实际效果。
 
+酒馆助手悬浮版使用：
+
+```bash
+pnpm build:floating-mvu
+```
+
+构建后将 `dist/daoyuan-floating-mvu.json` 导入酒馆助手角色脚本库，再手动启用该脚本（酒馆助手导入时会默认禁用新脚本）。该版本直接读取最新助手消息中的 MVU 数据，并在 MVU 更新结束后刷新同一个悬浮窗口，不会在每次回复后重建 iframe。独立的黑金“玖”字圆形按钮用于开关窗口，拖动按钮只移动按钮本身；状态栏顶部中央的细金线可单独拖动窗口，四个角均可像桌面窗口一样拖动缩放。酒馆助手脚本按钮“切换悬浮窗”也可开关窗口，按钮位置、窗口位置、大小和显示状态会分别保存在浏览器中。Zod 变量结构校验仍由角色卡中原有的独立校验脚本负责。
+
+一次构建全部产物：
+
+```bash
+pnpm build:all
+```
+
+会生成 `dist/regex-mvu.json`、`dist/regex-shujuku.json` 和 `dist/daoyuan-floating-mvu.json`。
+
 如果需要从已有的 MVU JSON 恢复源码，先确认当前 `src/` 没有需要保留的修改，再运行 `pnpm extract`。脚本默认会阻止覆盖已有的 `src/index.html`，确需覆盖时才使用 `--force`。
 
 ## 目录说明
