@@ -17,6 +17,24 @@ const inlineScripts = Array.from(
 const unsafeEntities = forbiddenEntityLiterals.filter((entity) => {
   return inlineScripts.some((script) => script.includes(entity));
 });
+const requiredPortraitDrawerMarkers = [
+  "portrait-drawers.json",
+  "daoyuan_portrait_drawers_cache",
+  "daoyuan_active_portrait_pools",
+  "publishedPortraitPoolIds",
+  "daoyuan_portrait_storage_migration_version",
+  "daoyuan_custom_portraits_pool_",
+  "portrait-pool-selector",
+  "portrait-pool-body-open",
+  "switchPortraitInPool",
+  "checkRemotePortraitDrawerUpdate",
+  "dyPortraitDrawerUpdateAvailable",
+  "replaceChildren",
+  "sourceKey",
+];
+const missingPortraitDrawerMarkers = requiredPortraitDrawerMarkers.filter(
+  marker => !distHtml.includes(marker),
+);
 
 if (unsafeEntities.length > 0) {
   throw new Error(
@@ -24,4 +42,12 @@ if (unsafeEntities.length > 0) {
   );
 }
 
-console.log("Validated inline scripts for srcdoc-safe entity handling");
+if (missingPortraitDrawerMarkers.length > 0) {
+  throw new Error(
+    `Build is missing portrait drawer markers: ${missingPortraitDrawerMarkers.join(", ")}`,
+  );
+}
+
+console.log(
+  "Validated inline scripts and dynamic portrait drawer build markers",
+);

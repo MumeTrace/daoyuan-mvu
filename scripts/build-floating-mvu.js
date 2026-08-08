@@ -238,16 +238,17 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   const CLEANUP_KEY = "__daoyuanFloatingMvuCleanup";
   const LAYOUT_KEY = "daoyuan-floating-mvu-layout-v3";
   const MANUAL_UPDATE_EVENT = "daoyuan_mvu_manual_updated";
+  const PET_CHARACTER_NAME = "南可熙";
   const DRAG_THRESHOLD = 5;
   const MIN_WIDTH = 320;
   const MIN_HEIGHT = 192;
   const PET_BUBBLE_TEXT = Object.freeze({
-    update: "嗯？命数动了。",
-    press: "莫敲头。 (눈_눈)",
-    open: "来，给你看。",
-    close: "有事再唤我。",
-    drag: "……放手。",
-    danger: "站我身后。",
+    update: "哟，棋局又动了。",
+    press: "嘶——别敲本姑娘！",
+    open: "来，本姑娘给你瞧瞧。",
+    close: "行啦，本姑娘歇会儿。",
+    drag: "喂！别提本姑娘的腰！",
+    danger: "真是杂鱼……退后。",
   });
   const scriptWindow = window;
   const tavernWindow = window.parent || window;
@@ -376,7 +377,7 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       tavernWindow.matchMedia("(pointer: coarse)").matches;
     return coarsePointer || viewportSize.width <= 640
       ? { width: 48.96, height: 65.28 }
-      : { width: 66, height: 88 };
+      : { width: 78, height: 104 };
   }
 
   function getLauncherSize() {
@@ -540,7 +541,7 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   }
 
   const petAnimations = {
-    idle: "dy-pet-idle 3.2s ease-in-out infinite",
+    idle: "dy-pet-idle 4.8s ease-in-out infinite",
     press: "dy-pet-press .38s cubic-bezier(.2,.9,.25,1) both",
     drag: "dy-pet-drag .72s ease-in-out infinite",
     open: "dy-pet-open .68s cubic-bezier(.16,1,.3,1) both",
@@ -572,9 +573,9 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     launcher.setAttribute(
       "aria-label",
       hasDanger
-        ? "道渊检测到危险，点击查看"
+        ? `${PET_CHARACTER_NAME}检测到危险，点击查看`
         : hasUpdates
-          ? "道渊状态有新变化，点击查看"
+          ? `${PET_CHARACTER_NAME}提醒状态有新变化，点击查看`
           : launcher.title,
     );
     launcher.setAttribute("aria-expanded", String(!collapsed));
@@ -751,8 +752,10 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     petStyle.id = PET_STYLE_ID;
     petStyle.textContent = `
 @keyframes dy-pet-idle {
-  0%,100% { transform:translate3d(0,0,0) rotate(-.8deg) scale(1); }
-  48% { transform:translate3d(0,-3px,0) rotate(.9deg) scale(1.012); }
+  0%,100% { transform:translate3d(0,0,0) rotate(-.55deg) scale(1,1); }
+  24% { transform:translate3d(0,-1px,0) rotate(.15deg) scale(1.004,1.008); }
+  50% { transform:translate3d(0,-3px,0) rotate(.65deg) scale(.998,1.018); }
+  76% { transform:translate3d(0,-1px,0) rotate(-.1deg) scale(1.003,1.009); }
 }
 @keyframes dy-pet-press {
   0% { transform:translate3d(0,0,0) scale(1); }
@@ -790,6 +793,13 @@ function floatingMvuRuntime(uiHtml, petAssets) {
 }
 #${LAUNCHER_ID}[data-pet-state="drag"] img {
   filter:drop-shadow(0 8px 6px rgba(0,0,0,.58)) drop-shadow(0 0 6px rgba(104,204,255,.2)) brightness(1.025);
+  transform-origin:52% 20%;
+}
+#${LAUNCHER_ID}[data-pet-state="idle"] img,
+#${LAUNCHER_ID}[data-pet-state="press"] img,
+#${LAUNCHER_ID}[data-pet-state="open"] img,
+#${LAUNCHER_ID}[data-pet-state="close"] img {
+  transform-origin:50% 82%;
 }
 #${LAUNCHER_ID} .dy-pet-update-bubble {
   opacity:0;
@@ -808,8 +818,8 @@ function floatingMvuRuntime(uiHtml, petAssets) {
 }
 @media (pointer:coarse), (max-width:640px) {
   @keyframes dy-pet-idle {
-    0%,100% { transform:translate3d(0,0,0) rotate(-.45deg) scale(1); }
-    50% { transform:translate3d(0,-2px,0) rotate(.45deg) scale(1.008); }
+    0%,100% { transform:translate3d(0,0,0) rotate(-.3deg) scale(1); }
+    50% { transform:translate3d(0,-2px,0) rotate(.3deg) scale(.999,1.01); }
   }
 }
 @media (prefers-reduced-motion:reduce) {
@@ -824,6 +834,7 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     launcher.id = LAUNCHER_ID;
     launcher.type = "button";
     launcher.dataset.petState = "idle";
+    launcher.dataset.petCharacter = PET_CHARACTER_NAME;
     launcher.dataset.hasUpdates = "false";
     launcher.dataset.hasDanger = "false";
     launcher.dataset.bubbleVisible = "false";
@@ -864,10 +875,10 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       "user-select:none",
       "-webkit-user-select:none",
       "-webkit-user-drag:none",
-      "transform-origin:50% 46%",
+      "transform-origin:50% 82%",
       "will-change:transform,opacity,filter",
-      "animation:dy-pet-idle 3.2s ease-in-out infinite",
-      "transition:filter .18s ease",
+      "animation:dy-pet-idle 4.8s ease-in-out infinite",
+      "transition:filter .18s ease,transform-origin .18s ease",
     ].join(";");
 
     petNoticeBubble = tavernDocument.createElement("span");

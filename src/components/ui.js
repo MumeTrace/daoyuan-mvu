@@ -811,7 +811,7 @@ window.populateCharacterData = function(variablesOverride) {
 
   /* 绑定删除按钮事件 (其他页面的正常删除逻辑保留) */
   window.bindDiscardButtons();
-  if (window.injectHeartButtons) window.injectHeartButtons();
+  if (window.injectPortraitDrawers) window.injectPortraitDrawers();
   if (window.injectLoreClicks) window.injectLoreClicks();
   if (window.jiuqiEditMode && window.toggleJiuqiEdit) {
     window.jiuqiEditMode = false;

@@ -507,24 +507,28 @@ window.getNoticeUnreadState = function () {
   const portraitUpdate = String(
     data.tabs && data.tabs["立绘更新"] ? data.tabs["立绘更新"] : "",
   );
+  const drawerUpdate = window.dyPortraitDrawerUpdateAvailable === true;
   try {
     return {
       version:
         version !== "" &&
         localStorage.getItem(NOTICE_VERSION_READ_KEY) !== version,
       portrait:
-        portraitUpdate !== "" &&
-        localStorage.getItem(NOTICE_PORTRAIT_READ_KEY) !== portraitUpdate,
+        drawerUpdate ||
+        (portraitUpdate !== "" &&
+          localStorage.getItem(NOTICE_PORTRAIT_READ_KEY) !== portraitUpdate),
       versionValue: version,
       portraitValue: portraitUpdate,
+      drawerUpdate,
     };
   } catch (e) {
     console.warn("[道渊] 读取公告已读状态失败:", e);
     return {
       version: false,
-      portrait: false,
+      portrait: drawerUpdate,
       versionValue: version,
       portraitValue: portraitUpdate,
+      drawerUpdate,
     };
   }
 };
@@ -615,11 +619,14 @@ window.loadRemoteNotice = async function () {
     );
     if (res.ok) {
       window.dyNoticeData = await res.json();
-      window.updateNoticeHeaderAttention();
     }
   } catch (e) {
     console.error("[道渊] 获取公告失败:", e);
   }
+  if (typeof window.checkRemotePortraitDrawerUpdate === "function") {
+    await window.checkRemotePortraitDrawerUpdate();
+  }
+  window.updateNoticeHeaderAttention();
 };
 window.dySanitizeHtml = function (str) {
   if (typeof str !== "string") return "";

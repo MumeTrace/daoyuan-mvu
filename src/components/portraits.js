@@ -9,13 +9,55 @@ var defaultCharPortraitsFemale = window.defaultCharPortraitsFemale = {};
 var defaultSpecialPortraits = window.defaultSpecialPortraits = {};
 
 const PORTRAIT_CACHE_KEY = "daoyuan_portraits_cache";
+const PORTRAIT_DRAWERS_CACHE_KEY = "daoyuan_portrait_drawers_cache";
 const PORTRAIT_INDEX_KEY = "daoyuan_portrait_indices";
 const PORTRAIT_EXPLICIT_CUSTOM_KEY = "daoyuan_explicit_custom_portraits";
-const PORTRAIT_CUSTOM_KEYS = {
+const PORTRAIT_ACTIVE_POOL_KEY = "daoyuan_active_portrait_pools";
+const PORTRAIT_MIGRATION_VERSION_KEY =
+  "daoyuan_portrait_storage_migration_version";
+const PORTRAIT_MIGRATION_VERSION = 1;
+const PORTRAIT_URL =
+  "https://raw.githubusercontent.com/YttriumCarbide/Daoyuan/main/portraits.json";
+const PORTRAIT_DRAWERS_URL =
+  "https://raw.githubusercontent.com/YttriumCarbide/Daoyuan/main/portrait-drawers.json";
+const LEGACY_PORTRAIT_CUSTOM_KEYS = {
   normal: "daoyuan_custom_portraits",
   female: "daoyuan_custom_portraits_female",
   special: "daoyuan_custom_portraits_special",
 };
+const FALLBACK_PORTRAIT_DRAWERS = {
+  schemaVersion: 1,
+  pools: {
+    normal: {
+      name: "普通",
+      icon: "常",
+      order: 10,
+      sourceKey: "charPortraits",
+    },
+    female: {
+      name: "性转",
+      icon: "♀",
+      order: 20,
+      sourceKey: "charPortraitsFemale",
+    },
+    special: {
+      name: "心动",
+      icon: "💖",
+      order: 30,
+      sourceKey: "specialPortraits",
+    },
+  },
+  aliases: {},
+};
+
+let portraitDrawerConfig = window.portraitDrawerConfig =
+  FALLBACK_PORTRAIT_DRAWERS;
+let defaultPortraitPools = window.defaultPortraitPools = {};
+let portraitPools = window.portraitPools = {};
+let publishedPortraitPoolIds = window.publishedPortraitPoolIds = new Set();
+if (typeof window.dyPortraitDrawerUpdateAvailable !== "boolean") {
+  window.dyPortraitDrawerUpdateAvailable = false;
+}
 
 function getPortraitStorage() {
   return window.DaoyuanStatusStorage || window.localStorage;
@@ -57,7 +99,106 @@ function readPortraitJson(key, fallback = {}) {
 
 function writePortraitJson(key, value) {
   getPortraitStorage().setItem(key, JSON.stringify(value));
+  portraitJsonReadCache.delete(key);
 }
+
+function getPortraitCustomKey(poolId) {
+  return `daoyuan_custom_portraits_pool_${poolId}`;
+}
+
+function getDrawerPool(poolId) {
+  return portraitDrawerConfig.pools[poolId] || null;
+}
+
+function resolvePortraitPoolId(poolId) {
+  const aliases = portraitDrawerConfig.aliases || {};
+  let resolved = poolId || "normal";
+  const visited = new Set();
+  while (aliases[resolved] && !visited.has(resolved)) {
+    visited.add(resolved);
+    resolved = aliases[resolved];
+  }
+  return portraitDrawerConfig.pools[resolved] ? resolved : "normal";
+}
+
+function parsePortraitDrawerConfig(raw) {
+  const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!data || typeof data !== "object" || !data.pools) {
+    throw new Error("立绘抽屉配置不是有效对象");
+  }
+  const pools = {};
+  const sourceKeys = new Set();
+  const orders = new Set();
+  for (const [poolId, value] of Object.entries(data.pools)) {
+    if (!/^[a-z][a-z0-9_-]*$/.test(poolId)) {
+      throw new Error(`抽屉 ID 不合法：${poolId}`);
+    }
+    if (!value || typeof value !== "object") {
+      throw new Error(`抽屉配置无效：${poolId}`);
+    }
+    const sourceKey = String(value.sourceKey || "").trim();
+    if (!sourceKey || !/^[A-Za-z][A-Za-z0-9_]*$/.test(sourceKey)) {
+      throw new Error(`抽屉 sourceKey 不合法：${poolId}`);
+    }
+    if (sourceKeys.has(sourceKey)) {
+      throw new Error(`抽屉 sourceKey 重复：${sourceKey}`);
+    }
+    sourceKeys.add(sourceKey);
+    const order = Number.isFinite(Number(value.order)) ? Number(value.order) : 999;
+    if (orders.has(order)) throw new Error(`抽屉 order 重复：${order}`);
+    orders.add(order);
+    pools[poolId] = {
+      name: String(value.name || poolId).trim() || poolId,
+      icon: String(value.icon || "🖼️").trim() || "🖼️",
+      order,
+      sourceKey,
+    };
+  }
+  if (!pools.normal) throw new Error("抽屉配置缺少 normal");
+  const aliases = {};
+  if (data.aliases && typeof data.aliases === "object") {
+    for (const [oldId, newId] of Object.entries(data.aliases)) {
+      if (typeof newId === "string" && pools[newId]) aliases[oldId] = newId;
+    }
+  }
+  return {
+    schemaVersion: Number(data.schemaVersion) || 1,
+    pools,
+    aliases,
+  };
+}
+
+function getPortraitDrawerSignature(config) {
+  const normalized = parsePortraitDrawerConfig(config);
+  return JSON.stringify({
+    schemaVersion: normalized.schemaVersion,
+    pools: Object.entries(normalized.pools)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([poolId, pool]) => [poolId, pool]),
+    aliases: Object.entries(normalized.aliases || {}).sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
+  });
+}
+
+window.checkRemotePortraitDrawerUpdate = async function () {
+  try {
+    const response = await fetch(PORTRAIT_DRAWERS_URL + "?t=" + Date.now());
+    if (!response.ok) {
+      throw new Error(`抽屉配置请求异常：${response.status}`);
+    }
+    const remoteConfig = parsePortraitDrawerConfig(await response.text());
+    window.dyPortraitDrawerUpdateAvailable =
+      getPortraitDrawerSignature(remoteConfig) !==
+      getPortraitDrawerSignature(portraitDrawerConfig);
+  } catch (e) {
+    console.warn("[道渊状态栏] 检查抽屉配置更新失败:", e);
+  }
+  if (typeof window.updateNoticeHeaderAttention === "function") {
+    window.updateNoticeHeaderAttention();
+  }
+  return window.dyPortraitDrawerUpdateAvailable;
+};
 
 function normalizePortraitMap(obj) {
   if (typeof obj !== "object" || obj === null) return {};
@@ -83,10 +224,8 @@ function splitPortraitUrls(value) {
 }
 
 function getDefaultPortraitValue(name, mode) {
-  if (mode === "normal") return defaultCharPortraits[name] || "";
-  if (mode === "female") return defaultCharPortraitsFemale[name] || "";
-  if (mode === "special") return defaultSpecialPortraits[name] || "";
-  return "";
+  const poolId = resolvePortraitPoolId(mode);
+  return (defaultPortraitPools[poolId] || {})[name] || "";
 }
 
 function isCyclicRotation(left, right) {
@@ -99,31 +238,29 @@ function isCyclicRotation(left, right) {
 }
 
 function getExplicitCustomState() {
-  const state = readPortraitJson(PORTRAIT_EXPLICIT_CUSTOM_KEY, {});
-  return {
-    normal: state.normal || {},
-    female: state.female || {},
-    special: state.special || {},
-  };
+  return readPortraitJson(PORTRAIT_EXPLICIT_CUSTOM_KEY, {});
 }
 
 function setExplicitCustom(name, mode, enabled) {
   const state = getExplicitCustomState();
-  if (enabled) state[mode][name] = true;
-  else delete state[mode][name];
+  const poolId = resolvePortraitPoolId(mode);
+  state[poolId] = state[poolId] || {};
+  if (enabled) state[poolId][name] = true;
+  else delete state[poolId][name];
   writePortraitJson(PORTRAIT_EXPLICIT_CUSTOM_KEY, state);
 }
 
 function reconcileLegacyPortraitOverrides(defaultsByMode) {
   const explicit = getExplicitCustomState();
 
-  Object.entries(PORTRAIT_CUSTOM_KEYS).forEach(([mode, storageKey]) => {
+  Object.keys(portraitDrawerConfig.pools).forEach((mode) => {
+    const storageKey = getPortraitCustomKey(mode);
     const custom = normalizePortraitMap(readPortraitJson(storageKey, {}));
     const defaults = defaultsByMode[mode] || {};
     let customChanged = false;
 
     Object.entries(custom).forEach(([name, value]) => {
-      if (explicit[mode][name]) return;
+      if (explicit[mode] && explicit[mode][name]) return;
       if (defaults[name] && isCyclicRotation(value, defaults[name])) {
         delete custom[name];
         customChanged = true;
@@ -134,50 +271,219 @@ function reconcileLegacyPortraitOverrides(defaultsByMode) {
   });
 }
 
-function parsePortraitCache(raw) {
+function parsePortraitCache(raw, drawers = portraitDrawerConfig) {
   if (!raw) return null;
   const data = typeof raw === "string" ? JSON.parse(raw) : raw;
   if (typeof data !== "object" || data === null) {
     throw new Error("立绘库不是有效对象");
   }
-  return {
-    raw: data,
-    normal: normalizePortraitMap(data.charPortraits),
-    female: normalizePortraitMap(data.charPortraitsFemale),
-    special: normalizePortraitMap(data.specialPortraits),
-  };
+  const pools = {};
+  const publishedPoolIds = [];
+  for (const [poolId, config] of Object.entries(drawers.pools)) {
+    pools[poolId] = normalizePortraitMap(data[config.sourceKey]);
+    if (Object.keys(pools[poolId]).length > 0) {
+      publishedPoolIds.push(poolId);
+    }
+  }
+  return { raw: data, pools, publishedPoolIds };
 }
 
 function getPortraitIndexState() {
-  const state = readPortraitJson(PORTRAIT_INDEX_KEY, {});
-  return {
-    normal: state.normal || {},
-    female: state.female || {},
-    special: state.special || {},
-  };
+  return readPortraitJson(PORTRAIT_INDEX_KEY, {});
 }
 
 function getPortraitIndex(name, mode, length) {
   if (length <= 0) return 0;
   const savedState = readCachedPortraitJson(PORTRAIT_INDEX_KEY, {});
-  const state = {
-    normal: savedState.normal || {},
-    female: savedState.female || {},
-    special: savedState.special || {},
-  };
-  const stored = Number(state[mode][name]);
+  const poolId = resolvePortraitPoolId(mode);
+  const stored = Number((savedState[poolId] || {})[name]);
   return Number.isInteger(stored) && stored >= 0 ? stored % length : 0;
 }
 
 function setPortraitIndex(name, mode, index) {
   const state = getPortraitIndexState();
-  state[mode][name] = index;
+  const poolId = resolvePortraitPoolId(mode);
+  state[poolId] = state[poolId] || {};
+  state[poolId][name] = index;
   writePortraitJson(PORTRAIT_INDEX_KEY, state);
 }
 
 function getIndexedPortrait(value, name, mode) {
   const urls = splitPortraitUrls(value);
   return urls[getPortraitIndex(name, mode, urls.length)];
+}
+
+function getCustomPortraitMap(poolId) {
+  return normalizePortraitMap(
+    readPortraitJson(getPortraitCustomKey(resolvePortraitPoolId(poolId)), {}),
+  );
+}
+
+function writeCustomPortraitMap(poolId, value) {
+  const resolved = resolvePortraitPoolId(poolId);
+  writePortraitJson(getPortraitCustomKey(resolved), value);
+  const legacyKey = LEGACY_PORTRAIT_CUSTOM_KEYS[resolved];
+  if (legacyKey) writePortraitJson(legacyKey, value);
+}
+
+function migrateLegacyPortraitStorage() {
+  for (const [poolId, legacyKey] of Object.entries(
+    LEGACY_PORTRAIT_CUSTOM_KEYS,
+  )) {
+    if (!portraitDrawerConfig.pools[poolId]) continue;
+    const legacy = normalizePortraitMap(readPortraitJson(legacyKey, {}));
+    const current = getCustomPortraitMap(poolId);
+    const merged = { ...legacy, ...current };
+    if (JSON.stringify(merged) !== JSON.stringify(current)) {
+      writePortraitJson(getPortraitCustomKey(poolId), merged);
+    }
+  }
+  const aliases = portraitDrawerConfig.aliases || {};
+  const explicit = getExplicitCustomState();
+  const indices = getPortraitIndexState();
+  const active = readPortraitJson(PORTRAIT_ACTIVE_POOL_KEY, {});
+  for (const [oldId, nextId] of Object.entries(aliases)) {
+    const newId = resolvePortraitPoolId(nextId);
+    const oldCustom = normalizePortraitMap(
+      readPortraitJson(getPortraitCustomKey(oldId), {}),
+    );
+    if (Object.keys(oldCustom).length) {
+      writeCustomPortraitMap(newId, {
+        ...oldCustom,
+        ...getCustomPortraitMap(newId),
+      });
+    }
+    if (explicit[oldId]) {
+      explicit[newId] = { ...explicit[oldId], ...(explicit[newId] || {}) };
+    }
+    if (indices[oldId]) {
+      indices[newId] = { ...indices[oldId], ...(indices[newId] || {}) };
+    }
+  }
+  for (const [name, poolId] of Object.entries(active)) {
+    if (aliases[poolId]) active[name] = resolvePortraitPoolId(poolId);
+  }
+  writePortraitJson(PORTRAIT_EXPLICIT_CUSTOM_KEY, explicit);
+  writePortraitJson(PORTRAIT_INDEX_KEY, indices);
+  writePortraitJson(PORTRAIT_ACTIVE_POOL_KEY, active);
+  getPortraitStorage().setItem(
+    PORTRAIT_MIGRATION_VERSION_KEY,
+    String(PORTRAIT_MIGRATION_VERSION),
+  );
+}
+
+function syncLegacyPortraitGlobals() {
+  defaultCharPortraits = window.defaultCharPortraits =
+    defaultPortraitPools.normal || {};
+  defaultCharPortraitsFemale = window.defaultCharPortraitsFemale =
+    defaultPortraitPools.female || {};
+  defaultSpecialPortraits = window.defaultSpecialPortraits =
+    defaultPortraitPools.special || {};
+  charPortraits = window.charPortraits = portraitPools.normal || {};
+  charPortraitsFemale = window.charPortraitsFemale = portraitPools.female || {};
+  window.specialPortraits = portraitPools.special || {};
+}
+
+function rebuildPortraitPools() {
+  const next = {};
+  for (const poolId of Object.keys(portraitDrawerConfig.pools)) {
+    next[poolId] = {
+      ...(defaultPortraitPools[poolId] || {}),
+      ...getCustomPortraitMap(poolId),
+    };
+  }
+  portraitPools = window.portraitPools = next;
+  syncLegacyPortraitGlobals();
+}
+
+function getCharacterPortraitStat(name) {
+  let stat = {};
+  try {
+    stat = window.getAllVariables().stat_data || {};
+  } catch (e) {}
+  return (
+    (stat.道侣 && stat.道侣[name]) ||
+    (stat.人物 && stat.人物[name]) ||
+    (stat.灵宠 && stat.灵宠[name]) ||
+    (stat.绝色榜 && stat.绝色榜[name]) ||
+    {}
+  );
+}
+
+function getCharacterAffection(name) {
+  const person = getCharacterPortraitStat(name);
+  return parseFloat(
+    person.亲密 || person.好感 || person.亲密度 || person.好感度 || 0,
+  );
+}
+
+function isPortraitPoolVisible(name, poolId) {
+  const resolved = resolvePortraitPoolId(poolId);
+  if (resolved === "normal") return true;
+  if (!publishedPortraitPoolIds.has(resolved)) return false;
+  const hasPortrait = Boolean((portraitPools[resolved] || {})[name]);
+  if (resolved === "female") return hasPortrait;
+  if (resolved === "special") {
+    return hasPortrait && getCharacterAffection(name) > 90;
+  }
+  return true;
+}
+
+function getVisiblePortraitPools(name) {
+  return Object.entries(portraitDrawerConfig.pools)
+    .filter(([poolId]) => isPortraitPoolVisible(name, poolId))
+    .sort((left, right) => left[1].order - right[1].order);
+}
+
+function getSavedActivePortraitPool(name) {
+  const state = readCachedPortraitJson(PORTRAIT_ACTIVE_POOL_KEY, {});
+  const saved = state[name];
+  if (!saved) return "";
+  const resolved = resolvePortraitPoolId(saved);
+  return isPortraitPoolVisible(name, resolved) ? resolved : "";
+}
+
+window.getActivePortraitPool = function (name, gender) {
+  const saved = getSavedActivePortraitPool(name);
+  if (saved) return saved;
+  if (getCustomPortraitMap("normal")[name]) return "normal";
+  const effectiveGender = gender || getCharacterPortraitStat(name).性别;
+  if (
+    effectiveGender &&
+    /^女/.test(effectiveGender) &&
+    isPortraitPoolVisible(name, "female")
+  ) {
+    return "female";
+  }
+  return "normal";
+};
+
+window.setActivePortraitPool = function (name, poolId) {
+  const resolved = resolvePortraitPoolId(poolId);
+  if (!isPortraitPoolVisible(name, resolved)) return false;
+  const state = readPortraitJson(PORTRAIT_ACTIVE_POOL_KEY, {});
+  state[name] = resolved;
+  writePortraitJson(PORTRAIT_ACTIVE_POOL_KEY, state);
+  return true;
+};
+
+function getPortraitPoolValue(name, poolId) {
+  const resolved = resolvePortraitPoolId(poolId);
+  return (portraitPools[resolved] || {})[name] || "";
+}
+
+function renderPortraitDrawerIcon(icon) {
+  if (/^https?:\/\//i.test(icon)) {
+    const image = document.createElement("img");
+    image.className = "portrait-pool-icon-image";
+    image.src = icon;
+    image.alt = "";
+    return image;
+  }
+  const span = document.createElement("span");
+  span.className = "portrait-pool-icon-text";
+  span.textContent = icon;
+  return span;
 }
 
 function refreshVisiblePortraitSearch() {
@@ -197,25 +503,29 @@ function refreshVisiblePortraitSearch() {
 window.loadRemotePortraits = async function () {
   let hasCache = false;
   try {
+    const cachedDrawers = getPortraitStorage().getItem(
+      PORTRAIT_DRAWERS_CACHE_KEY,
+    );
+    portraitDrawerConfig = window.portraitDrawerConfig = cachedDrawers
+      ? parsePortraitDrawerConfig(cachedDrawers)
+      : parsePortraitDrawerConfig(FALLBACK_PORTRAIT_DRAWERS);
+  } catch (e) {
+    console.warn("[道渊状态栏] 读取立绘抽屉缓存失败，使用内置配置:", e);
+    portraitDrawerConfig = window.portraitDrawerConfig =
+      parsePortraitDrawerConfig(FALLBACK_PORTRAIT_DRAWERS);
+  }
+
+  try {
     const cached = getPortraitStorage().getItem(PORTRAIT_CACHE_KEY);
     if (cached) {
       const parsed = parsePortraitCache(cached);
-      defaultCharPortraits = window.defaultCharPortraits = parsed.normal;
-      defaultCharPortraitsFemale = window.defaultCharPortraitsFemale =
-        parsed.female;
-      defaultSpecialPortraits = window.defaultSpecialPortraits = parsed.special;
-
-      reconcileLegacyPortraitOverrides({
-        normal: defaultCharPortraits,
-        female: defaultCharPortraitsFemale,
-        special: defaultSpecialPortraits,
-      });
-
-      charPortraits = window.charPortraits = { ...defaultCharPortraits };
-      charPortraitsFemale = window.charPortraitsFemale = {
-        ...defaultCharPortraitsFemale,
-      };
-      window.specialPortraits = { ...defaultSpecialPortraits };
+      defaultPortraitPools = window.defaultPortraitPools = parsed.pools;
+      publishedPortraitPoolIds = window.publishedPortraitPoolIds = new Set(
+        parsed.publishedPoolIds,
+      );
+      migrateLegacyPortraitStorage();
+      reconcileLegacyPortraitOverrides(defaultPortraitPools);
+      rebuildPortraitPools();
       console.log("[道渊状态栏] 本地缓存立绘配置加载成功");
       hasCache = true;
     }
@@ -261,27 +571,11 @@ window.loadRemotePortraits = async function () {
       }, 1000); // 延迟 1 秒弹出，避免阻塞页面渲染
     }
   }
-  try {
-    Object.assign(
-      charPortraits,
-      normalizePortraitMap(
-        readPortraitJson(PORTRAIT_CUSTOM_KEYS.normal, {}),
-      ),
-    );
-    Object.assign(
-      charPortraitsFemale,
-      normalizePortraitMap(
-        readPortraitJson(PORTRAIT_CUSTOM_KEYS.female, {}),
-      ),
-    );
-    Object.assign(
-      window.specialPortraits,
-      normalizePortraitMap(
-        readPortraitJson(PORTRAIT_CUSTOM_KEYS.special, {}),
-      ),
-    );
-  } catch (e) {
-    console.warn("[道渊] 加载自定义立绘失败:", e);
+  if (!hasCache) {
+    migrateLegacyPortraitStorage();
+    defaultPortraitPools = window.defaultPortraitPools = {};
+    publishedPortraitPoolIds = window.publishedPortraitPoolIds = new Set();
+    rebuildPortraitPools();
   }
   return hasCache;
 };
@@ -312,48 +606,91 @@ window.forceUpdateRemotePortraits = async function (btnElement) {
     }, 2500);
   };
   try {
-    const url = "https://raw.githubusercontent.com/YttriumCarbide/Daoyuan/main/portraits.json";
-    const response = await fetch(url + "?t=" + new Date().getTime());
-    if (!response.ok) {
-      throw new Error("网络请求异常：" + response.status);
-    }
+    const cacheBust = "?t=" + Date.now();
+    const fetchText = async (url, label) => {
+      const response = await fetch(url + cacheBust);
+      if (!response.ok) throw new Error(`${label}请求异常：${response.status}`);
+      return response.text();
+    };
+    const [portraitResult, drawerResult] = await Promise.allSettled([
+      fetchText(PORTRAIT_URL, "立绘库"),
+      fetchText(PORTRAIT_DRAWERS_URL, "抽屉配置"),
+    ]);
 
-    const oldCache = getPortraitStorage().getItem(PORTRAIT_CACHE_KEY);
-    if (oldCache) {
+    let nextDrawers = portraitDrawerConfig;
+    let drawerUpdated = false;
+    let portraitUpdated = false;
+    const errors = [];
+
+    if (drawerResult.status === "fulfilled") {
       try {
-        const previous = parsePortraitCache(oldCache);
-        reconcileLegacyPortraitOverrides(previous);
+        nextDrawers = parsePortraitDrawerConfig(drawerResult.value);
+        getPortraitStorage().setItem(
+          PORTRAIT_DRAWERS_CACHE_KEY,
+          JSON.stringify(nextDrawers),
+        );
+        drawerUpdated = true;
       } catch (e) {
-        console.warn("[道渊] 旧立绘缓存无法用于迁移:", e);
+        errors.push("抽屉配置：" + e.message);
       }
+    } else {
+      errors.push("抽屉配置：" + drawerResult.reason.message);
     }
 
-    const text = await response.text();
-    const incoming = parsePortraitCache(text);
-    if (
-      Object.keys(incoming.normal).length === 0 &&
-      Object.keys(incoming.female).length === 0 &&
-      Object.keys(incoming.special).length === 0
-    ) {
-      throw new Error("远程立绘库为空或格式不正确");
+    if (portraitResult.status === "fulfilled") {
+      try {
+        const incoming = parsePortraitCache(
+          portraitResult.value,
+          nextDrawers,
+        );
+        const portraitCount = Object.values(incoming.pools).reduce(
+          (total, pool) => total + Object.keys(pool).length,
+          0,
+        );
+        if (portraitCount === 0) {
+          throw new Error("远程立绘库为空或格式不正确");
+        }
+        getPortraitStorage().setItem(
+          PORTRAIT_CACHE_KEY,
+          JSON.stringify(incoming.raw),
+        );
+        portraitUpdated = true;
+      } catch (e) {
+        errors.push("立绘库：" + e.message);
+      }
+    } else {
+      errors.push("立绘库：" + portraitResult.reason.message);
     }
 
-    getPortraitStorage().setItem(
-      PORTRAIT_CACHE_KEY,
-      JSON.stringify(incoming.raw),
-    );
+    if (!portraitUpdated && !drawerUpdated) {
+      throw new Error(errors.join("；"));
+    }
+
     const loaded = await window.loadRemotePortraits();
-    if (!loaded) {
+    if (!loaded && portraitUpdated) {
       throw new Error("新版立绘库写入后无法重新加载");
     }
     if (typeof window.populateCharacterData === "function") {
       window.populateCharacterData();
     }
     refreshVisiblePortraitSearch();
-    showToast("最新立绘库同步成功！", true);
+    if (drawerUpdated) {
+      window.dyPortraitDrawerUpdateAvailable = false;
+      if (typeof window.updateNoticeHeaderAttention === "function") {
+        window.updateNoticeHeaderAttention();
+      }
+    }
+    if (portraitUpdated && drawerUpdated) {
+      showToast("立绘库与抽屉配置同步成功！", true);
+    } else if (portraitUpdated) {
+      showToast("立绘库已更新，抽屉配置沿用本地缓存", true);
+    } else {
+      showToast("抽屉配置已更新，立绘库沿用本地缓存", true);
+    }
+    if (errors.length) console.warn("[道渊状态栏] 部分同步失败:", errors);
   } catch (e) {
     console.error("[道渊状态栏] 手动同步立绘失败:", e);
-    showToast("同步失败：" + e.message, false);
+    showToast("同步失败，已保留本地缓存：" + e.message, false);
   } finally {
     if (btnElement) {
       btnElement.innerHTML = "🖼️ 同步最新立绘库";
@@ -364,24 +701,12 @@ window.forceUpdateRemotePortraits = async function (btnElement) {
 };
 
 window.preloadPortraits = function (name) {
-  let urls = [];
-  let cp = {};
-  try {
-    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
-    if (s) cp = JSON.parse(s);
-  } catch (e) {}
-  let base =
-    cp[name] ||
-    (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
-  if (base) {
-    base.split("|").forEach((u) => {
-      if (u) urls.push(u);
-    });
+  const urls = [];
+  for (const poolId of Object.keys(portraitDrawerConfig.pools)) {
+    splitPortraitUrls(getPortraitPoolValue(name, poolId)).forEach((url) =>
+      urls.push(url),
+    );
   }
-  if (typeof charPortraitsFemale !== "undefined" && charPortraitsFemale[name])
-    urls.push(charPortraitsFemale[name]);
-  if (window.specialPortraits && window.specialPortraits[name])
-    urls.push(window.specialPortraits[name]);
   urls.forEach((u) => {
     if (!window.dy_preloaded) {
       window.dy_preloaded = {};
@@ -411,128 +736,111 @@ $(document).on(
   },
 );
 window.updatePortraitView = function (name, newSrc) {
+  const portraitSrc = String(newSrc || "").trim();
   document
     .querySelectorAll(
       `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
     )
     .forEach((c) => {
-      let img = c.querySelector(".large-portrait img");
-      let p = c.querySelector(".large-portrait");
-      let btn = c.querySelector(".portrait-toggle-btn");
-      if (img) {
-        if (p) {
-          p.classList.remove("show");
-          if (btn) btn.innerHTML = "查看立绘 ▼";
+      const p = c.querySelector(".large-portrait");
+      const btn = c.querySelector(".portrait-toggle-btn");
+      if (!p) return;
+
+      p.classList.remove("show");
+      p.replaceChildren();
+      if (!portraitSrc) {
+        p.style.cssText =
+          "display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;";
+        p.textContent = "点击「🎨 自定义」上传本地图片";
+        if (btn) {
+          btn.innerHTML = "暂无立绘";
+          btn.style.opacity = "0.75";
+          btn.title = "配置或获取角色立绘";
+          btn.onclick = function (event) {
+            event.stopPropagation();
+            window.showMissingPortraitDialog(
+              name,
+              window.getActivePortraitPool(name),
+            );
+          };
         }
-        img.onload = () => {
-          if (p) {
-            p.classList.add("show");
-            if (btn) btn.innerHTML = "收起立绘 ▲";
-          }
-          img.onload = null;
-        };
-        img.onerror = () => {
-          if (p) {
-            p.classList.add("show");
-            if (btn) btn.innerHTML = "收起立绘 ▲";
-          }
-          img.src =
-            "https://via.placeholder.com/400x600/1a181d/ff4d4d?text=加载失败";
-          img.onerror = null;
-        };
-        img.src = newSrc;
-        img.dataset.src = newSrc;
+        return;
       }
+
+      p.removeAttribute("style");
+      const img = document.createElement("img");
+      img.alt = name;
+      img.dataset.src = portraitSrc;
+      p.appendChild(img);
+      if (btn) {
+        btn.innerHTML = "查看立绘 ▼";
+        btn.style.opacity = "";
+        btn.title = "";
+        btn.onclick = function (event) {
+          event.stopPropagation();
+          const currentImg = p.querySelector("img");
+          if (currentImg && !currentImg.src) {
+            currentImg.src = currentImg.dataset.src;
+          }
+          p.classList.toggle("show");
+          btn.innerHTML = p.classList.contains("show")
+            ? "收起立绘 ▲"
+            : "查看立绘 ▼";
+        };
+      }
+      img.onload = () => {
+        p.classList.add("show");
+        if (btn) btn.innerHTML = "收起立绘 ▲";
+        img.onload = null;
+      };
+      img.onerror = () => {
+        p.classList.add("show");
+        if (btn) btn.innerHTML = "收起立绘 ▲";
+        img.src =
+          "https://via.placeholder.com/400x600/1a181d/ff4d4d?text=加载失败";
+        img.onerror = null;
+      };
+      img.src = portraitSrc;
     });
   let listItem = document.querySelector(
     `.wx-list-item[data-name='${name}'] img.portrait-img`,
   );
   if (listItem) {
-    listItem.src = newSrc;
-    listItem.dataset.src = newSrc;
+    const listSrc =
+      portraitSrc || "https://via.placeholder.com/50/000000/FFFFFF/?text=?";
+    listItem.src = listSrc;
+    listItem.dataset.src = listSrc;
   }
   if (window.currentActiveChat === name) {
     let bg = document.getElementById("wx-chat-bg");
-    if (bg) bg.style.backgroundImage = `url('${newSrc}')`;
+    if (bg) {
+      bg.style.backgroundImage = portraitSrc ? `url('${portraitSrc}')` : "none";
+      if (!portraitSrc) bg.style.backgroundColor = "#0a0a0f";
+    }
   }
 };
 window.showSpecialPortrait = function (name) {
-  let special = window.specialPortraits ? window.specialPortraits[name] : "";
-  if (!special) return;
-  let arr = splitPortraitUrls(special);
-  let c = document.querySelector(
-    `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
-  );
-  let img = c ? c.querySelector(".large-portrait img") : null;
-  if (img && arr.includes(img.dataset.src)) {
-    let cp = {};
-    try {
-      let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
-      if (s) cp = JSON.parse(s);
-    } catch (e) {}
-    let base =
-      cp[name] ||
-      (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
-    window.updatePortraitView(
-      name,
-      getIndexedPortrait(base, name, "normal") || "",
-    );
-  } else {
-    window.updatePortraitView(
-      name,
-      getIndexedPortrait(special, name, "special") || "",
-    );
-  }
+  const target =
+    window.getActivePortraitPool(name) === "special" ? "normal" : "special";
+  return window.selectPortraitPool(name, target);
 };
-window.switchPortrait = function (name) {
-  let c = document.querySelector(
-    `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
-  );
-  let img = c ? c.querySelector(".large-portrait img") : null;
-  let cur = img ? img.dataset.src : "";
-  let cp = {};
-  try {
-    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
-    if (s) cp = JSON.parse(s);
-  } catch (e) {}
-  let norm =
-    cp[name] ||
-    (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
-  let cpf = {};
-  try {
-    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.female);
-    if (s) cpf = JSON.parse(s);
-  } catch (e) {}
-  let fem =
-    cpf[name] ||
-    (typeof charPortraitsFemale !== "undefined"
-      ? charPortraitsFemale[name]
-      : "");
-  let cps = {};
-  try {
-    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.special);
-    if (s) cps = JSON.parse(s);
-  } catch (e) {}
-  let spec =
-    cps[name] || (window.specialPortraits ? window.specialPortraits[name] : "");
-  const cycle = (str, mode) => {
-    const urls = splitPortraitUrls(str);
-    if (urls.length < 2) return false;
-    let currentIndex = urls.indexOf(cur);
-    if (currentIndex < 0) {
-      currentIndex = getPortraitIndex(name, mode, urls.length);
-    }
-    const nextIndex = (currentIndex + 1) % urls.length;
-    setPortraitIndex(name, mode, nextIndex);
-    window.updatePortraitView(name, urls[nextIndex]);
-    return true;
-  };
+window.switchPortraitInPool = function (name, poolId) {
+  poolId = resolvePortraitPoolId(poolId);
+  const urls = splitPortraitUrls(getPortraitPoolValue(name, poolId));
   let done = false;
-  if (fem && fem.split("|").includes(cur))
-    done = cycle(fem, "female");
-  else if (spec && spec.split("|").includes(cur))
-    done = cycle(spec, "special");
-  else done = cycle(norm, "normal");
+  if (urls.length >= 2) {
+    const card = document.querySelector(
+      `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
+    );
+    const image = card ? card.querySelector(".large-portrait img") : null;
+    const currentUrl = image ? image.dataset.src : "";
+    let currentIndex = urls.indexOf(currentUrl);
+    if (currentIndex < 0) currentIndex = getPortraitIndex(name, poolId, urls.length);
+    const nextIndex = (currentIndex + 1) % urls.length;
+    setPortraitIndex(name, poolId, nextIndex);
+    window.updatePortraitView(name, urls[nextIndex]);
+    done = true;
+  }
   if (!done) {
     if (!document.getElementById("dy-portrait-toast")) {
       let t = document.createElement("div");
@@ -547,35 +855,17 @@ window.switchPortrait = function (name) {
       }, 2500);
     }
   }
+  return done;
+};
+window.switchPortrait = function (name) {
+  const person = getCharacterPortraitStat(name);
+  const poolId = window.getActivePortraitPool(name, person.性别);
+  return window.switchPortraitInPool(name, poolId);
 };
 window.toggleFemalePortrait = function (name) {
-  let femSrc =
-    typeof charPortraitsFemale !== "undefined" ? charPortraitsFemale[name] : "";
-  if (!femSrc) return;
-  let arr = splitPortraitUrls(femSrc);
-  let c = document.querySelector(
-    `[data-partner='${name}'], [data-npc='${name}'], [data-pet='${name}'], [data-beauty='${name}']`,
-  );
-  let img = c ? c.querySelector(".large-portrait img") : null;
-  if (img && arr.includes(img.dataset.src)) {
-    let cp = {};
-    try {
-      let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
-      if (s) cp = JSON.parse(s);
-    } catch (e) {}
-    let base =
-      cp[name] ||
-      (typeof charPortraits !== "undefined" ? charPortraits[name] : "");
-    window.updatePortraitView(
-      name,
-      getIndexedPortrait(base, name, "normal") || "",
-    );
-  } else {
-    window.updatePortraitView(
-      name,
-      getIndexedPortrait(femSrc, name, "female") || "",
-    );
-  }
+  const target =
+    window.getActivePortraitPool(name) === "female" ? "normal" : "female";
+  return window.selectPortraitPool(name, target);
 };
 window.executeShowLoreByName = async function (name) {
   let t = document.getElementById("faction-modal-title");
@@ -742,19 +1032,10 @@ window.searchAndShowPortrait = function () {
     r.style.display = "none";
     return;
   }
-  let cp = {};
-  try {
-    let s = getPortraitStorage().getItem(PORTRAIT_CUSTOM_KEYS.normal);
-    if (s) cp = JSON.parse(s);
-  } catch (e) {}
   let all = new Set();
-  Object.keys(cp).forEach((x) => all.add(x));
-  if (typeof charPortraits !== "undefined")
-    Object.keys(charPortraits).forEach((x) => all.add(x));
-  if (typeof charPortraitsFemale !== "undefined")
-    Object.keys(charPortraitsFemale).forEach((x) => all.add(x));
-  if (window.specialPortraits)
-    Object.keys(window.specialPortraits).forEach((x) => all.add(x));
+  Object.values(portraitPools).forEach((pool) =>
+    Object.keys(pool).forEach((name) => all.add(name)),
+  );
   let allArr = Array.from(all);
   let matched =
     k === "随机"
@@ -784,16 +1065,10 @@ window.searchAndShowPortrait = function () {
     if (typeof window.getPortraitUrl === "function")
       pUrl = window.getPortraitUrl(n, p.性别);
     if (!pUrl) {
-      let base =
-        cp[n] || (typeof charPortraits !== "undefined" ? charPortraits[n] : "");
-      pUrl = base ? base.split("|")[0] : "";
-      if (
-        !pUrl &&
-        typeof charPortraitsFemale !== "undefined" &&
-        charPortraitsFemale[n]
-      )
-        pUrl = charPortraitsFemale[n];
+      const poolId = window.getActivePortraitPool(n, p.性别);
+      pUrl = getIndexedPortrait(getPortraitPoolValue(n, poolId), n, poolId);
     }
+    const hasPortrait = Boolean(pUrl);
     let safeN = String(n).replace(/"/g, '"');
     html +=
       '<div class="info-card" data-beauty="' +
@@ -802,119 +1077,194 @@ window.searchAndShowPortrait = function () {
       safeN +
       '\');" title="点击探查天机">' +
       safeN +
-      '</span><span style="font-size:0.8em;color:var(--text-dim)">查阅结果</span></div><div class="portrait-wrapper"><div class="portrait-actions"><div class="portrait-toggle-btn" onclick="const px=this.parentElement.nextElementSibling;const img=px.querySelector(\'img\');if(!img.src){img.src=img.dataset.src;}px.classList.toggle(\'show\');this.innerHTML=px.classList.contains(\'show\')?\'收起立绘 ▲\':\'查看立绘 ▼\';">查看立绘 ▼</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog(\'' +
+      '</span><span style="font-size:0.8em;color:var(--text-dim)">查阅结果</span></div><div class="portrait-wrapper"><div class="portrait-actions">' +
+      (hasPortrait
+        ? '<div class="portrait-toggle-btn" onclick="const px=this.parentElement.nextElementSibling;const img=px.querySelector(\'img\');if(!img.src){img.src=img.dataset.src;}px.classList.toggle(\'show\');this.innerHTML=px.classList.contains(\'show\')?\'收起立绘 ▲\':\'查看立绘 ▼\';">查看立绘 ▼</div>'
+        : '<div class="portrait-toggle-btn" style="opacity:0.75;" onclick="event.stopPropagation(); window.showMissingPortraitDialog(\'' +
+          safeN +
+          '\');" title="配置或获取角色立绘">暂无立绘</div>') +
+      '<div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog(\'' +
       safeN +
       '\');" title="设置立绘">🎨</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.switchPortrait(\'' +
       safeN +
       '\');" title="切换立绘">🔄</div>' +
       renderDaoyuanApplause(n) +
-      '</div><div class="large-portrait"><img data-src="' +
-      pUrl +
-      '" alt="' +
-      safeN +
-      '"></div></div></div>';
+      '</div>' +
+      (hasPortrait
+        ? '<div class="large-portrait"><img data-src="' +
+          pUrl +
+          '" alt="' +
+          safeN +
+          '"></div>'
+        : '<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>') +
+      '</div></div>';
   });
   r.innerHTML = html;
   r.style.display = "block";
-  if (window.injectHeartButtons) window.injectHeartButtons();
+  if (window.injectPortraitDrawers) window.injectPortraitDrawers();
 };
-window.injectHeartButtons = function () {
-  let stat = {};
-  try {
-    stat = window.getAllVariables().stat_data || {};
-  } catch (e) {}
-  if (!document.getElementById("c-btn-anim")) {
-    let s = document.createElement("style");
-    s.id = "c-btn-anim";
-    s.innerHTML =
-      "@keyframes hBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}} @keyframes fFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}} .btn-heart{animation:hBeat 1.5s infinite} .btn-gender{animation:fFloat 2.5s infinite ease-in-out}";
-    document.head.appendChild(s);
+window.selectPortraitPool = function (name, poolId) {
+  const resolved = resolvePortraitPoolId(poolId);
+  if (!window.setActivePortraitPool(name, resolved)) return false;
+  const value = getPortraitPoolValue(name, resolved);
+  if (!value) {
+    window.updatePortraitView(name, "");
+    window.showMissingPortraitDialog(name, resolved);
+    window.injectPortraitDrawers();
+    return false;
   }
-  document.querySelectorAll(".portrait-wrapper").forEach((w) => {
-    let c = w.closest("[data-partner], [data-npc], [data-pet], [data-beauty]");
-    if (!c) return;
-    let n =
-      c.dataset.partner || c.dataset.npc || c.dataset.pet || c.dataset.beauty;
-    let p =
-      (stat.道侣 && stat.道侣[n]) ||
-      (stat.人物 && stat.人物[n]) ||
-      (stat.灵宠 && stat.灵宠[n]) ||
-      (stat.绝色榜 && stat.绝色榜[n]) ||
-      {};
-    let bc = w.firstElementChild;
-    if (!bc) return;
-    if (window.specialPortraits && window.specialPortraits[n]) {
-      let f = parseFloat(p.亲密 || p.好感 || p.亲密度 || p.好感度 || 0);
-      if (f > 90 && !w.querySelector(".btn-heart")) {
-        let hb = document.createElement("div");
-        hb.className = "portrait-custom-btn btn-heart";
-        hb.style.color = "#ff69b4";
-        hb.style.borderColor = "#ff69b4";
-        hb.title = "心动立绘";
-        hb.innerHTML = "💖";
-        hb.onclick = function (e) {
-          e.stopPropagation();
-          window.showSpecialPortrait(n);
-        };
-        bc.appendChild(hb);
-      }
-    }
-    if (
-      typeof charPortraitsFemale !== "undefined" &&
-      charPortraitsFemale[n] &&
-      !w.querySelector(".btn-gender")
-    ) {
-      let gb = document.createElement("div");
-      gb.className = "portrait-custom-btn btn-gender";
-      gb.style.color = "#d980fa";
-      gb.style.borderColor = "#d980fa";
-      gb.title = "性转立绘";
-      gb.innerHTML = "♀️";
-      gb.onclick = function (e) {
-        e.stopPropagation();
-        window.toggleFemalePortrait(n);
+  window.updatePortraitView(
+    name,
+    getIndexedPortrait(value, name, resolved) || "",
+  );
+  window.injectPortraitDrawers();
+  return true;
+};
+
+window.injectPortraitDrawers = function () {
+  document.querySelectorAll(".portrait-wrapper").forEach((wrapper) => {
+    const card = wrapper.closest(
+      "[data-partner], [data-npc], [data-pet], [data-beauty]",
+    );
+    if (!card) return;
+    const name =
+      card.dataset.partner ||
+      card.dataset.npc ||
+      card.dataset.pet ||
+      card.dataset.beauty;
+    const actions = wrapper.querySelector(".portrait-actions");
+    if (!actions || !name) return;
+    actions
+      .querySelectorAll(".btn-heart, .btn-gender, .portrait-pool-selector")
+      .forEach((element) => element.remove());
+
+    const person = getCharacterPortraitStat(name);
+    const activePool = window.getActivePortraitPool(name, person.性别);
+    const activeConfig = getDrawerPool(activePool) || getDrawerPool("normal");
+    const selector = document.createElement("div");
+    selector.className = "portrait-pool-selector";
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "portrait-pool-toggle";
+    toggle.title = "选择立绘卡池";
+    toggle.setAttribute("aria-haspopup", "menu");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.appendChild(renderPortraitDrawerIcon(activeConfig.icon));
+    const label = document.createElement("span");
+    label.className = "portrait-pool-toggle-label";
+    label.textContent = activeConfig.name;
+    toggle.appendChild(label);
+    const arrow = document.createElement("span");
+    arrow.className = "portrait-pool-arrow";
+    arrow.textContent = "▾";
+    toggle.appendChild(arrow);
+
+    const menu = document.createElement("div");
+    menu.className = "portrait-pool-menu";
+    menu.setAttribute("role", "menu");
+    getVisiblePortraitPools(name).forEach(([poolId, config]) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "portrait-pool-option";
+      item.setAttribute("role", "menuitem");
+      item.dataset.poolId = poolId;
+      if (poolId === activePool) item.classList.add("is-active");
+      item.appendChild(renderPortraitDrawerIcon(config.icon));
+      const itemLabel = document.createElement("span");
+      itemLabel.textContent = config.name;
+      item.appendChild(itemLabel);
+      item.onclick = function (event) {
+        event.stopPropagation();
+        window.selectPortraitPool(name, poolId);
       };
-      bc.appendChild(gb);
-    }
+      menu.appendChild(item);
+    });
+
+    toggle.onclick = function (event) {
+      event.stopPropagation();
+      const willOpen = !selector.classList.contains("is-open");
+      document
+        .querySelectorAll(".portrait-pool-selector.is-open")
+        .forEach((other) => {
+          if (other !== selector) {
+            other.classList.remove("is-open");
+            const otherCard = other.closest(
+              ".info-card, .partner-card, .npc-card",
+            );
+            if (otherCard) otherCard.classList.remove("portrait-pool-open");
+            const otherBody = other.closest(".card-collapse-body");
+            if (otherBody) {
+              otherBody.classList.remove("portrait-pool-body-open");
+            }
+          }
+        });
+      const largePortrait = wrapper.querySelector(".large-portrait");
+      selector.classList.toggle(
+        "opens-up",
+        willOpen && !largePortrait?.classList.contains("show"),
+      );
+      selector.classList.toggle("is-open", willOpen);
+      card.classList.toggle("portrait-pool-open", willOpen);
+      const collapseBody = selector.closest(".card-collapse-body");
+      if (collapseBody) {
+        collapseBody.classList.toggle("portrait-pool-body-open", willOpen);
+      }
+      toggle.setAttribute("aria-expanded", String(willOpen));
+    };
+    selector.append(toggle, menu);
+    actions.appendChild(selector);
   });
 };
 
+window.injectHeartButtons = window.injectPortraitDrawers;
+
+if (!window.__daoyuanPortraitDrawerCloseBound) {
+  window.__daoyuanPortraitDrawerCloseBound = true;
+  document.addEventListener("click", () => {
+    document
+      .querySelectorAll(".portrait-pool-selector.is-open")
+      .forEach((selector) => {
+        selector.classList.remove("is-open");
+        const card = selector.closest(".info-card, .partner-card, .npc-card");
+        if (card) card.classList.remove("portrait-pool-open");
+        const collapseBody = selector.closest(".card-collapse-body");
+        if (collapseBody) {
+          collapseBody.classList.remove("portrait-pool-body-open");
+        }
+        selector.classList.remove("opens-up");
+        const toggle = selector.querySelector(".portrait-pool-toggle");
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      });
+  });
+}
+
 /* 获取立绘URL（支持多图切换和玉简同步） */
 window.getPortraitUrl = function (name, gender) {
-  const customPortraits = readCachedPortraitJson(
-    PORTRAIT_CUSTOM_KEYS.normal,
-    {},
-  );
-  if (customPortraits[name]) {
-    return getIndexedPortrait(customPortraits[name], name, "normal");
-  }
-  if (charPortraitsFemale[name] && gender && /^女/.test(gender)) {
-    return getIndexedPortrait(charPortraitsFemale[name], name, "female");
-  }
-  return charPortraits[name]
-    ? getIndexedPortrait(charPortraits[name], name, "normal")
-    : undefined;
+  const poolId = window.getActivePortraitPool(name, gender);
+  const value = getPortraitPoolValue(name, poolId);
+  return value ? getIndexedPortrait(value, name, poolId) : undefined;
 };
 
 /* 保存自定义立绘到 localStorage */
 window.saveCustomPortrait = function (name, url, mode = "normal") {
   try {
-    const storageKey = PORTRAIT_CUSTOM_KEYS[mode];
-    if (!storageKey) throw new Error("未知立绘类型：" + mode);
+    const poolId = resolvePortraitPoolId(mode);
+    if (!getDrawerPool(poolId)) throw new Error("未知立绘类型：" + mode);
     const normalizedUrl = splitPortraitUrls(url).join("|");
     const normalizedDefault = splitPortraitUrls(
-      getDefaultPortraitValue(name, mode),
+      getDefaultPortraitValue(name, poolId),
     ).join("|");
     if (normalizedDefault && normalizedUrl === normalizedDefault) {
       console.log(
         "[道渊] 保存内容与云端默认立绘一致，继续跟随云端:",
         name,
-        mode,
+        poolId,
       );
-      return window.removeCustomPortrait(name, mode);
+      return window.removeCustomPortrait(name, poolId);
     }
 
-    const customPortraits = readPortraitJson(storageKey, {});
+    const customPortraits = getCustomPortraitMap(poolId);
     customPortraits[name] = normalizedUrl;
     const dataStr = JSON.stringify(customPortraits);
     if (
@@ -941,12 +1291,13 @@ window.saveCustomPortrait = function (name, url, mode = "normal") {
       );
       return false;
     }
-    getPortraitStorage().setItem(storageKey, dataStr);
-    setExplicitCustom(name, mode, true);
-    setPortraitIndex(name, mode, 0);
-    if (mode === "normal") charPortraits[name] = normalizedUrl;
-    else if (mode === "female") charPortraitsFemale[name] = normalizedUrl;
-    else window.specialPortraits[name] = normalizedUrl;
+    writeCustomPortraitMap(poolId, customPortraits);
+    setExplicitCustom(name, poolId, true);
+    setPortraitIndex(name, poolId, 0);
+    portraitPools[poolId] = portraitPools[poolId] || {};
+    portraitPools[poolId][name] = normalizedUrl;
+    syncLegacyPortraitGlobals();
+    window.setActivePortraitPool(name, poolId);
     if (typeof window.populateCharacterData === "function") {
       window.populateCharacterData();
     }
@@ -1004,27 +1355,18 @@ window.handlePortraitFileUpload = function (fileInput, charName) {
 /* 删除自定义立绘（恢复默认） */
 window.removeCustomPortrait = function (name, mode = "normal") {
   try {
-    const storageKey = PORTRAIT_CUSTOM_KEYS[mode];
-    if (!storageKey) throw new Error("未知立绘类型：" + mode);
-    const customPortraits = readPortraitJson(storageKey, {});
+    const poolId = resolvePortraitPoolId(mode);
+    if (!getDrawerPool(poolId)) throw new Error("未知立绘类型：" + mode);
+    const customPortraits = getCustomPortraitMap(poolId);
     delete customPortraits[name];
-    writePortraitJson(storageKey, customPortraits);
-    setExplicitCustom(name, mode, false);
-    setPortraitIndex(name, mode, 0);
-
-    if (mode === "normal") {
-      if (defaultCharPortraits[name])
-        charPortraits[name] = defaultCharPortraits[name];
-      else delete charPortraits[name];
-    } else if (mode === "female") {
-      if (defaultCharPortraitsFemale[name])
-        charPortraitsFemale[name] = defaultCharPortraitsFemale[name];
-      else delete charPortraitsFemale[name];
-    } else {
-      if (defaultSpecialPortraits[name])
-        window.specialPortraits[name] = defaultSpecialPortraits[name];
-      else delete window.specialPortraits[name];
-    }
+    writeCustomPortraitMap(poolId, customPortraits);
+    setExplicitCustom(name, poolId, false);
+    setPortraitIndex(name, poolId, 0);
+    portraitPools[poolId] = portraitPools[poolId] || {};
+    const defaultValue = getDefaultPortraitValue(name, poolId);
+    if (defaultValue) portraitPools[poolId][name] = defaultValue;
+    else delete portraitPools[poolId][name];
+    syncLegacyPortraitGlobals();
 
     if (typeof window.populateCharacterData === "function") {
       window.populateCharacterData();
@@ -1038,7 +1380,11 @@ window.removeCustomPortrait = function (name, mode = "normal") {
 };
 
 /* 暂无立绘时的操作提示 */
-window.showMissingPortraitDialog = function (charName) {
+window.showMissingPortraitDialog = function (charName, mode) {
+  const poolId = resolvePortraitPoolId(
+    mode || window.getActivePortraitPool(charName),
+  );
+  const poolConfig = getDrawerPool(poolId) || getDrawerPool("normal");
   const existing = document.getElementById("dy-missing-portrait-modal");
   if (existing) existing.remove();
 
@@ -1049,13 +1395,13 @@ window.showMissingPortraitDialog = function (charName) {
   modal.innerHTML = `
     <div style="width:88%;max-width:410px;padding:24px;background:linear-gradient(145deg,rgba(25,20,30,0.97),rgba(15,10,15,0.99));border:1px solid var(--border-metal);border-top:2px solid var(--accent-gold);border-bottom:2px solid var(--accent-gold);border-radius:12px;box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 20px rgba(255,215,0,0.05);text-align:center;animation:mapPanelSlideUp 0.3s cubic-bezier(0.2,0.8,0.2,1);">
       <div style="font-size:32px;margin-bottom:10px;text-shadow:0 0 12px var(--accent-gold-glow);">🖼️</div>
-      <div style="color:var(--accent-gold);font-size:1.18em;font-weight:bold;letter-spacing:2px;margin-bottom:12px;">尚未收录角色立绘</div>
+      <div style="color:var(--accent-gold);font-size:1.18em;font-weight:bold;letter-spacing:2px;margin-bottom:12px;">尚未收录${poolConfig.name}立绘</div>
       <div style="color:var(--text-main);font-size:0.95em;line-height:1.7;margin-bottom:22px;">
-        <span id="dy-missing-portrait-name" style="color:var(--accent-mana);font-weight:bold;"></span> 暂无可用立绘。<br>
-        <span style="color:var(--text-dim);font-size:0.9em;">可为该角色自定义配置，或前往公告获取最新立绘。</span>
+        <span id="dy-missing-portrait-name" style="color:var(--accent-mana);font-weight:bold;"></span> 暂无“${poolConfig.name}”立绘。<br>
+        <span style="color:var(--text-dim);font-size:0.9em;">可为该角色自定义配置${poolConfig.name}立绘，或前往公告获取最新立绘。</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">
-        <button id="dy-missing-custom-btn" style="flex:1;min-width:120px;padding:9px 14px;background:linear-gradient(135deg,#b8860b,#ffd700);color:#1a0f0f;border:1px solid rgba(255,255,255,0.35);border-radius:7px;cursor:pointer;font-weight:bold;box-shadow:0 4px 10px rgba(0,0,0,0.45);">🎨 自定义配置</button>
+        <button id="dy-missing-custom-btn" style="flex:1;min-width:120px;padding:9px 14px;background:linear-gradient(135deg,#b8860b,#ffd700);color:#1a0f0f;border:1px solid rgba(255,255,255,0.35);border-radius:7px;cursor:pointer;font-weight:bold;box-shadow:0 4px 10px rgba(0,0,0,0.45);">🎨 自定义${poolConfig.name}</button>
         <button id="dy-missing-notice-btn" style="flex:1;min-width:120px;padding:9px 14px;background:rgba(100,180,255,0.12);color:#64b4ff;border:1px solid rgba(100,180,255,0.45);border-radius:7px;cursor:pointer;font-weight:bold;">📜 前往公告</button>
         <button id="dy-missing-cancel-btn" style="padding:9px 18px;background:rgba(255,255,255,0.05);color:var(--text-dim);border:1px solid rgba(255,255,255,0.2);border-radius:7px;cursor:pointer;font-weight:bold;">取消</button>
       </div>
@@ -1068,7 +1414,7 @@ window.showMissingPortraitDialog = function (charName) {
   document.getElementById("dy-missing-cancel-btn").onclick = closeModal;
   document.getElementById("dy-missing-custom-btn").onclick = function () {
     closeModal();
-    window.openCustomPortraitDialog(charName);
+    window.openCustomPortraitDialog(charName, poolId);
   };
   document.getElementById("dy-missing-notice-btn").onclick = async function () {
     closeModal();
@@ -1089,51 +1435,32 @@ window.showMissingPortraitDialog = function (charName) {
 
 /* 打开自定义立绘弹窗 */
 window.openCustomPortraitDialog = function (charName, mode) {
-  mode = mode || "normal";
+  mode = resolvePortraitPoolId(
+    mode || window.getActivePortraitPool(charName),
+  );
   var existing = document.getElementById("portrait-custom-modal");
-  if (existing && !mode.startsWith("_keep")) existing.remove();
-  if (mode.startsWith("_keep")) mode = mode.replace("_keep", "");
-  var currentUrl = charPortraits[charName] || "";
-  if (mode === "female") currentUrl = charPortraitsFemale[charName] || "";
-  if (mode === "special") currentUrl = window.specialPortraits[charName] || "";
+  if (existing) existing.remove();
+  var currentUrl = getPortraitPoolValue(charName, mode);
   var isCustom = false;
   try {
-    var key = PORTRAIT_CUSTOM_KEYS[mode];
-    var saved = getPortraitStorage().getItem(key);
-    if (saved) {
-      var cp = JSON.parse(saved);
-      isCustom = cp.hasOwnProperty(charName);
-    }
+    isCustom = Object.prototype.hasOwnProperty.call(
+      getCustomPortraitMap(mode),
+      charName,
+    );
   } catch (e) {}
   var modal =
     document.getElementById("portrait-custom-modal") ||
     document.createElement("div");
   modal.id = "portrait-custom-modal";
   modal.className = "portrait-custom-modal show";
-  var subBtnsHtml = "";
-  if (charName in charPortraitsFemale && mode !== "female") {
-    subBtnsHtml += `<button class="btn-rst-all" style="position:static;background:rgba(217,128,250,0.15);color:var(--rare-text);border:1px solid var(--rare-text);margin-right:6px;" onclick="event.stopPropagation();window.openCustomPortraitDialog('${charName}','_keepfemale')">♀️ 性转配置</button>`;
-  }
-  if (
-    window.specialPortraits &&
-    charName in window.specialPortraits &&
-    mode !== "special"
-  ) {
-    subBtnsHtml += `<button class="btn-rst-all" style="position:static;background:rgba(255,105,180,0.15);color:#ff69b4;border:1px solid #ff69b4;margin-right:6px;" onclick="event.stopPropagation();let stat={};try{stat=window.getAllVariables().stat_data||{};}catch(ex){}let p=(stat.道侣&&stat.道侣['${charName}'])||(stat.人物&&stat.人物['${charName}'])||(stat.灵宠&&stat.灵宠['${charName}'])||(stat.绝色榜&&stat.绝色榜['${charName}'])||{};let f=parseFloat(p.亲密||p.好感||p.亲密度||p.好感度||0);if(f<90){alert('好感度不足，无法解锁该立绘配置！');}else{window.openCustomPortraitDialog('${charName}','_keepspecial');}">💖 心动配置</button>`;
-  }
-  if (mode !== "normal") {
-    subBtnsHtml += `<button class="btn-rst-all" style="position:static;background:rgba(100,180,255,0.15);color:#64b4ff;border:1px solid #64b4ff;margin-right:6px;" onclick="event.stopPropagation();window.openCustomPortraitDialog('${charName}','_keepnormal')">⬅️ 返回常规</button>`;
-  }
-  var titleText = `✨ 设定灵容 · ${charName}`;
-  if (mode === "female") titleText = `♀️ 设定性转灵容 · ${charName}`;
-  if (mode === "special") titleText = `💖 设定心动灵容 · ${charName}`;
-  modal.innerHTML = `<div class="portrait-custom-dialog"><style>.portrait-custom-dialog{position:relative;background:linear-gradient(145deg,rgba(25,20,30,0.95),rgba(15,10,15,0.98))!important;border:1px solid var(--border-metal)!important;border-top:2px solid var(--accent-gold)!important;border-bottom:2px solid var(--accent-gold)!important;border-radius:12px!important;padding:25px!important;box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 20px rgba(255,215,0,0.05)!important;}.portrait-custom-dialog h3{color:var(--accent-gold)!important;letter-spacing:3px;text-shadow:0 0 8px var(--accent-gold-glow);border-bottom:1px dashed rgba(255,255,255,0.1);padding-bottom:12px;}.portrait-custom-dialog input{border:1px solid rgba(255,215,0,0.3)!important;background:rgba(0,0,0,0.5)!important;color:var(--text-main)!important;margin-bottom:0!important;flex:1;padding:10px;border-radius:6px;}.portrait-custom-dialog input:focus{border-color:var(--accent-gold)!important;box-shadow:0 0 10px var(--accent-gold-glow)!important;outline:none;}.btn-confirm{background:linear-gradient(135deg,#b8860b,#ffd700)!important;color:#1a0f0f!important;border:1px solid rgba(255,255,255,0.4)!important;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.6);padding:8px 24px;border-radius:6px;cursor:pointer;}.btn-cancel{background:rgba(255,255,255,0.05)!important;color:var(--text-dim)!important;border:1px solid rgba(255,255,255,0.2)!important;padding:8px 24px;border-radius:6px;cursor:pointer;}.btn-reset{background:rgba(239,68,68,0.1)!important;color:var(--accent-blood)!important;border:1px solid rgba(239,68,68,0.3)!important;padding:8px 24px;border-radius:6px;cursor:pointer;}.portrait-preview-wrapper{width:100%;max-height:220px;min-height:120px;border:2px solid var(--border-metal);border-radius:8px;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;overflow:hidden;margin-bottom:15px;box-shadow:inset 0 0 20px rgba(0,0,0,0.8),0 0 15px var(--accent-gold-glow);position:relative;}.portrait-preview-wrapper::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:linear-gradient(45deg,transparent,rgba(255,215,0,0.05),transparent);animation:shine-rotate 6s infinite linear;pointer-events:none;z-index:1;}.portrait-custom-dialog:has(.portrait-preview.show) .portrait-preview-wrapper{display:flex;}.portrait-preview{max-width:100%;max-height:220px;object-fit:contain;z-index:2;position:relative;border-radius:4px;display:block!important;}.url-input-row{display:flex;gap:8px;margin-bottom:10px;}.btn-remove-url{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--accent-blood);border-radius:6px;padding:0 12px;cursor:pointer;font-weight:bold;}.btn-add-url{background:rgba(100,180,255,0.1);border:1px dashed rgba(100,180,255,0.4);color:#64b4ff;border-radius:6px;padding:8px;cursor:pointer;width:100%;text-align:center;margin-bottom:12px;font-size:0.9em;}.btn-rst-all{position:absolute;top:15px;right:15px;background:rgba(255,77,77,0.15);color:var(--accent-blood);border:1px solid var(--accent-blood);border-radius:4px;padding:4px 8px;font-size:0.75em;cursor:pointer;transition:all 0.2s;z-index:100;}.btn-rst-all:hover{background:var(--accent-blood);color:#fff;}</style><div style="position:absolute;top:15px;right:15px;display:flex;align-items:center;z-index:100;">${subBtnsHtml}<button class="btn-rst-all" id="btn-rst-all" style="position:static;">⚠️ 重置全员</button></div><h3>${titleText}</h3><div class="portrait-preview-wrapper"><img class="portrait-preview" id="portrait-preview-img" style="display:none;" onerror="this.classList.remove('show');this.style.display='none'"></div><div style="display:flex;gap:8px;align-items:stretch;margin-bottom:12px;"><label for="portrait-file-input" style="background:rgba(255,215,0,0.05);border:1px dashed var(--accent-gold);color:var(--accent-gold);padding:8px 16px;border-radius:6px;cursor:pointer;display:flex;align-items:center;">📁 本地图片</label><input type="file" id="portrait-file-input" accept="image/*" style="display:none;"><span id="portrait-file-name" style="flex:1;display:flex;align-items:center;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:0 10px;color:var(--text-dim);font-size:0.8em;overflow:hidden;white-space:nowrap;">未选择文件...</span></div><label style="color:var(--text-dim);font-size:0.9em;margin-bottom:5px;display:block;">图床URL地址</label><div id="url-inputs-container"></div>${mode === "normal" ? '<div class="btn-add-url" id="btn-add-url">➕ 添加多张立绘</div><div style="font-size:0.8em;color:var(--text-dim);font-style:italic;margin-bottom:12px;text-align:center;">💡 空白栏位将被自动忽略，系统会自动用竖线拼接。</div>' : ""}<div style="display:flex;gap:10px;justify-content:center;"><button class="btn-confirm" id="portrait-confirm-btn">✅ 确认保存</button>${isCustom ? '<button class="btn-reset" id="portrait-reset-btn">🔄 恢复默认</button>' : ""}<button class="btn-cancel" id="portrait-cancel-btn">取消</button></div></div>`;
+  var poolConfig = getDrawerPool(mode) || getDrawerPool("normal");
+  var titleText = `✨ 设定${poolConfig.name}灵容 · ${charName}`;
+  modal.innerHTML = `<div class="portrait-custom-dialog"><style>.portrait-custom-dialog{position:relative;background:linear-gradient(145deg,rgba(25,20,30,0.95),rgba(15,10,15,0.98))!important;border:1px solid var(--border-metal)!important;border-top:2px solid var(--accent-gold)!important;border-bottom:2px solid var(--accent-gold)!important;border-radius:12px!important;padding:25px!important;box-shadow:0 0 40px rgba(0,0,0,0.9),inset 0 0 20px rgba(255,215,0,0.05)!important;}.portrait-custom-dialog h3{color:var(--accent-gold)!important;letter-spacing:3px;text-shadow:0 0 8px var(--accent-gold-glow);border-bottom:1px dashed rgba(255,255,255,0.1);padding-bottom:12px;}.portrait-custom-dialog input{border:1px solid rgba(255,215,0,0.3)!important;background:rgba(0,0,0,0.5)!important;color:var(--text-main)!important;margin-bottom:0!important;flex:1;padding:10px;border-radius:6px;}.portrait-custom-dialog input:focus{border-color:var(--accent-gold)!important;box-shadow:0 0 10px var(--accent-gold-glow)!important;outline:none;}.btn-confirm{background:linear-gradient(135deg,#b8860b,#ffd700)!important;color:#1a0f0f!important;border:1px solid rgba(255,255,255,0.4)!important;font-weight:bold;box-shadow:0 4px 8px rgba(0,0,0,0.6);padding:8px 24px;border-radius:6px;cursor:pointer;}.btn-cancel{background:rgba(255,255,255,0.05)!important;color:var(--text-dim)!important;border:1px solid rgba(255,255,255,0.2)!important;padding:8px 24px;border-radius:6px;cursor:pointer;}.btn-reset{background:rgba(239,68,68,0.1)!important;color:var(--accent-blood)!important;border:1px solid rgba(239,68,68,0.3)!important;padding:8px 24px;border-radius:6px;cursor:pointer;}.portrait-preview-wrapper{width:100%;max-height:220px;min-height:120px;border:2px solid var(--border-metal);border-radius:8px;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;overflow:hidden;margin-bottom:15px;box-shadow:inset 0 0 20px rgba(0,0,0,0.8),0 0 15px var(--accent-gold-glow);position:relative;}.portrait-preview-wrapper::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:linear-gradient(45deg,transparent,rgba(255,215,0,0.05),transparent);animation:shine-rotate 6s infinite linear;pointer-events:none;z-index:1;}.portrait-custom-dialog:has(.portrait-preview.show) .portrait-preview-wrapper{display:flex;}.portrait-preview{max-width:100%;max-height:220px;object-fit:contain;z-index:2;position:relative;border-radius:4px;display:block!important;}.url-input-row{display:flex;gap:8px;margin-bottom:10px;}.btn-remove-url{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--accent-blood);border-radius:6px;padding:0 12px;cursor:pointer;font-weight:bold;}.btn-add-url{background:rgba(100,180,255,0.1);border:1px dashed rgba(100,180,255,0.4);color:#64b4ff;border-radius:6px;padding:8px;cursor:pointer;width:100%;text-align:center;margin-bottom:12px;font-size:0.9em;}.btn-rst-all{position:absolute;top:15px;right:15px;background:rgba(255,77,77,0.15);color:var(--accent-blood);border:1px solid var(--accent-blood);border-radius:4px;padding:4px 8px;font-size:0.75em;cursor:pointer;transition:all 0.2s;z-index:100;}.btn-rst-all:hover{background:var(--accent-blood);color:#fff;}</style><div style="position:absolute;top:15px;right:15px;display:flex;align-items:center;z-index:100;"><button class="btn-rst-all" id="btn-rst-all" style="position:static;">⚠️ 重置全员</button></div><h3>${titleText}</h3><div class="portrait-preview-wrapper"><img class="portrait-preview" id="portrait-preview-img" style="display:none;" onerror="this.classList.remove('show');this.style.display='none'"></div><div style="display:flex;gap:8px;align-items:stretch;margin-bottom:12px;"><label for="portrait-file-input" style="background:rgba(255,215,0,0.05);border:1px dashed var(--accent-gold);color:var(--accent-gold);padding:8px 16px;border-radius:6px;cursor:pointer;display:flex;align-items:center;">📁 本地图片</label><input type="file" id="portrait-file-input" accept="image/*" style="display:none;"><span id="portrait-file-name" style="flex:1;display:flex;align-items:center;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:0 10px;color:var(--text-dim);font-size:0.8em;overflow:hidden;white-space:nowrap;">未选择文件...</span></div><label style="color:var(--text-dim);font-size:0.9em;margin-bottom:5px;display:block;">图床URL地址</label><div id="url-inputs-container"></div><div class="btn-add-url" id="btn-add-url">➕ 添加多张立绘</div><div style="font-size:0.8em;color:var(--text-dim);font-style:italic;margin-bottom:12px;text-align:center;">💡 空白栏位将被自动忽略，系统会自动用竖线拼接。</div><div style="display:flex;gap:10px;justify-content:center;"><button class="btn-confirm" id="portrait-confirm-btn">✅ 确认保存</button>${isCustom ? '<button class="btn-reset" id="portrait-reset-btn">🔄 恢复默认</button>' : ""}<button class="btn-cancel" id="portrait-cancel-btn">取消</button></div></div>`;
   if (!document.getElementById("portrait-custom-modal"))
     document.body.appendChild(modal);
   var container = modal.querySelector("#url-inputs-container");
   var previewImgEl = modal.querySelector("#portrait-preview-img");
   var urls = currentUrl ? currentUrl.split("|") : [""];
-  if (mode !== "normal" && urls.length > 1) urls = [urls[0]];
   if (urls.length === 0) urls = [""];
   function renderInputs() {
     container.innerHTML = "";
@@ -1231,8 +1558,7 @@ window.openCustomPortraitDialog = function (charName, mode) {
         alert("请输入至少一个有效的图片URL");
         return;
       }
-      var finalUrl =
-        mode === "normal" ? validUrls.join("|") : validUrls[0].split("|")[0];
+      var finalUrl = validUrls.join("|");
       if (window.saveCustomPortrait(charName, finalUrl, mode)) {
         modal.remove();
       } else {
@@ -1258,18 +1584,22 @@ window.openCustomPortraitDialog = function (charName, mode) {
     cm.style.cssText =
       "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999999;display:flex;justify-content:center;align-items:center;backdrop-filter:blur(3px);";
     cm.innerHTML =
-      '<div style="background:var(--bg-dark);border:1px solid var(--accent-blood);padding:25px;border-radius:10px;text-align:center;width:80%;max-width:300px;box-shadow:0 0 20px rgba(255,77,77,0.3);"><div style="color:var(--accent-blood);font-size:1.2em;font-weight:bold;margin-bottom:15px;">⚠️ 确认重置全员立绘？</div><div style="color:var(--text-main);font-size:0.9em;margin-bottom:20px;line-height:1.5;">此操作将清除<span style="color:var(--accent-blood);">所有角色</span>的常规、性转及心动自定义立绘设置，恢复为默认状态。<br><br><span style="color:var(--text-dim);font-size:0.9em;">操作后无法撤销，是否继续？</span></div><div style="display:flex;gap:15px;"><button id="c-no" style="flex:1;background:rgba(255,255,255,0.1);color:var(--text-main);border:1px solid rgba(255,255,255,0.2);padding:8px;border-radius:5px;cursor:pointer;">取消</button><button id="c-yes" style="flex:1;background:var(--accent-blood);color:#fff;border:none;padding:8px;border-radius:5px;cursor:pointer;box-shadow:0 0 10px rgba(255,77,77,0.4);">确定重置</button></div></div>';
+      '<div style="background:var(--bg-dark);border:1px solid var(--accent-blood);padding:25px;border-radius:10px;text-align:center;width:80%;max-width:300px;box-shadow:0 0 20px rgba(255,77,77,0.3);"><div style="color:var(--accent-blood);font-size:1.2em;font-weight:bold;margin-bottom:15px;">⚠️ 确认重置全员立绘？</div><div style="color:var(--text-main);font-size:0.9em;margin-bottom:20px;line-height:1.5;">此操作将清除<span style="color:var(--accent-blood);">所有角色、所有抽屉</span>的自定义立绘设置，恢复为默认状态。<br><br><span style="color:var(--text-dim);font-size:0.9em;">操作后无法撤销，是否继续？</span></div><div style="display:flex;gap:15px;"><button id="c-no" style="flex:1;background:rgba(255,255,255,0.1);color:var(--text-main);border:1px solid rgba(255,255,255,0.2);padding:8px;border-radius:5px;cursor:pointer;">取消</button><button id="c-yes" style="flex:1;background:var(--accent-blood);color:#fff;border:none;padding:8px;border-radius:5px;cursor:pointer;box-shadow:0 0 10px rgba(255,77,77,0.4);">确定重置</button></div></div>';
     document.body.appendChild(cm);
     document.getElementById("c-no").onclick = function () {
       document.body.removeChild(cm);
     };
     document.getElementById("c-yes").onclick = function () {
       const storage = getPortraitStorage();
-      Object.values(PORTRAIT_CUSTOM_KEYS).forEach((key) =>
+      Object.keys(portraitDrawerConfig.pools).forEach((poolId) =>
+        storage.removeItem(getPortraitCustomKey(poolId)),
+      );
+      Object.values(LEGACY_PORTRAIT_CUSTOM_KEYS).forEach((key) =>
         storage.removeItem(key),
       );
       storage.removeItem(PORTRAIT_EXPLICIT_CUSTOM_KEY);
       storage.removeItem(PORTRAIT_INDEX_KEY);
+      storage.removeItem(PORTRAIT_ACTIVE_POOL_KEY);
       document.body.removeChild(cm);
       modal.remove();
       window.loadRemotePortraits().then(() => {
