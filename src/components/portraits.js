@@ -58,6 +58,9 @@ let publishedPortraitPoolIds = window.publishedPortraitPoolIds = new Set();
 if (typeof window.dyPortraitDrawerUpdateAvailable !== "boolean") {
   window.dyPortraitDrawerUpdateAvailable = false;
 }
+if (typeof window.dyPortraitCacheMissing !== "boolean") {
+  window.dyPortraitCacheMissing = false;
+}
 
 function getPortraitStorage() {
   return window.DaoyuanStatusStorage || window.localStorage;
@@ -306,6 +309,7 @@ function setPortraitIndex(name, mode, index) {
   state[poolId] = state[poolId] || {};
   state[poolId][name] = index;
   writePortraitJson(PORTRAIT_INDEX_KEY, state);
+  notifyPortraitConsumers();
 }
 
 function getIndexedPortrait(value, name, mode) {
@@ -394,6 +398,22 @@ function rebuildPortraitPools() {
   }
   portraitPools = window.portraitPools = next;
   syncLegacyPortraitGlobals();
+  notifyPortraitConsumers();
+}
+
+function notifyPortraitConsumers() {
+  if (typeof window.bumpBeautyForumPortraitRevision === "function") {
+    window.bumpBeautyForumPortraitRevision();
+  }
+  try {
+    window.dispatchEvent(new CustomEvent("daoyuan_portraits_changed"));
+  } catch (e) {}
+}
+
+function refreshPortraitAttentionState() {
+  if (typeof window.updateNoticeHeaderAttention === "function") {
+    window.updateNoticeHeaderAttention();
+  }
 }
 
 function getCharacterPortraitStat(name) {
@@ -464,6 +484,7 @@ window.setActivePortraitPool = function (name, poolId) {
   const state = readPortraitJson(PORTRAIT_ACTIVE_POOL_KEY, {});
   state[name] = resolved;
   writePortraitJson(PORTRAIT_ACTIVE_POOL_KEY, state);
+  notifyPortraitConsumers();
   return true;
 };
 
@@ -500,7 +521,69 @@ function refreshVisiblePortraitSearch() {
   }
 }
 
-window.loadRemotePortraits = async function () {
+async function syncRemotePortraitCaches() {
+  const cacheBust = "?t=" + Date.now();
+  const fetchText = async (url, label) => {
+    const response = await fetch(url + cacheBust);
+    if (!response.ok) throw new Error(`${label}请求异常：${response.status}`);
+    return response.text();
+  };
+  const [portraitResult, drawerResult] = await Promise.allSettled([
+    fetchText(PORTRAIT_URL, "立绘库"),
+    fetchText(PORTRAIT_DRAWERS_URL, "抽屉配置"),
+  ]);
+
+  let nextDrawers = portraitDrawerConfig;
+  let drawerUpdated = false;
+  let portraitUpdated = false;
+  const errors = [];
+
+  if (drawerResult.status === "fulfilled") {
+    try {
+      nextDrawers = parsePortraitDrawerConfig(drawerResult.value);
+      getPortraitStorage().setItem(
+        PORTRAIT_DRAWERS_CACHE_KEY,
+        JSON.stringify(nextDrawers),
+      );
+      drawerUpdated = true;
+    } catch (e) {
+      errors.push("抽屉配置：" + e.message);
+    }
+  } else {
+    errors.push("抽屉配置：" + drawerResult.reason.message);
+  }
+
+  if (portraitResult.status === "fulfilled") {
+    try {
+      const incoming = parsePortraitCache(portraitResult.value, nextDrawers);
+      const portraitCount = Object.values(incoming.pools).reduce(
+        (total, pool) => total + Object.keys(pool).length,
+        0,
+      );
+      if (portraitCount === 0) {
+        throw new Error("远程立绘库为空或格式不正确");
+      }
+      getPortraitStorage().setItem(
+        PORTRAIT_CACHE_KEY,
+        JSON.stringify(incoming.raw),
+      );
+      portraitUpdated = true;
+    } catch (e) {
+      errors.push("立绘库：" + e.message);
+    }
+  } else {
+    errors.push("立绘库：" + portraitResult.reason.message);
+  }
+
+  if (!portraitUpdated && !drawerUpdated) {
+    throw new Error(errors.join("；"));
+  }
+
+  return { portraitUpdated, drawerUpdated, errors };
+}
+
+window.loadRemotePortraits = async function (options = {}) {
+  const { autoFetch = true, suppressPrompt = false } = options;
   let hasCache = false;
   try {
     const cachedDrawers = getPortraitStorage().getItem(
@@ -527,17 +610,35 @@ window.loadRemotePortraits = async function () {
       reconcileLegacyPortraitOverrides(defaultPortraitPools);
       rebuildPortraitPools();
       console.log("[道渊状态栏] 本地缓存立绘配置加载成功");
+      window.dyPortraitCacheMissing = false;
+      refreshPortraitAttentionState();
       hasCache = true;
     }
   } catch (e) {
     console.error("[道渊状态栏] 读取本地立绘缓存失败:", e);
+    window.dyPortraitCacheMissing = true;
+    refreshPortraitAttentionState();
+  }
+
+  if (!hasCache && autoFetch) {
+    try {
+      const syncResult = await syncRemotePortraitCaches();
+      return window.loadRemotePortraits({
+        autoFetch: false,
+        suppressPrompt: syncResult.portraitUpdated,
+      });
+    } catch (e) {
+      console.warn("[道渊状态栏] 首次自动同步立绘失败，等待手动同步:", e);
+      window.dyPortraitCacheMissing = true;
+      refreshPortraitAttentionState();
+    }
   }
 
   if (!hasCache) {
     const hasPrompted = getPortraitStorage().getItem(
       "daoyuan_portraits_prompted",
     );
-    if (!hasPrompted) {
+    if (!hasPrompted && !suppressPrompt) {
       getPortraitStorage().setItem("daoyuan_portraits_prompted", "1");
       setTimeout(() => {
         const pm = document.createElement("div");
@@ -547,7 +648,7 @@ window.loadRemotePortraits = async function () {
             <div style="color:var(--accent-gold);font-size:1.3em;font-weight:bold;margin-bottom:15px;letter-spacing:1px;">✨ 欢迎使用道渊状态栏</div>
             <div style="color:var(--text-main);font-size:0.95em;line-height:1.6;margin-bottom:20px;">
               检测到您是首次加载，本地尚未缓存角色立绘。<br><br>
-              <span style="color:var(--text-dim);font-size:0.9em;">由于国内网络原因，系统不再自动后台获取。<br>请您点击下方按钮手动尝试同步最新立绘库！</span>
+              <span style="color:var(--text-dim);font-size:0.9em;">系统已尝试自动同步。若当前网络未拉取成功，<br>请点击下方按钮手动同步最新立绘库！</span>
             </div>
             <div style="display:flex;flex-direction:column;gap:10px;">
               <button id="dy-prompt-sync-btn" style="padding:10px 20px;background:linear-gradient(145deg, rgba(100,180,255,0.15), rgba(100,180,255,0.05));border:1px solid rgba(100,180,255,0.4);border-radius:24px;color:#64b4ff;cursor:pointer;font-size:1em;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 15px rgba(100,180,255,0.1);">
@@ -576,6 +677,8 @@ window.loadRemotePortraits = async function () {
     defaultPortraitPools = window.defaultPortraitPools = {};
     publishedPortraitPoolIds = window.publishedPortraitPoolIds = new Set();
     rebuildPortraitPools();
+    window.dyPortraitCacheMissing = true;
+    refreshPortraitAttentionState();
   }
   return hasCache;
 };
@@ -606,67 +709,12 @@ window.forceUpdateRemotePortraits = async function (btnElement) {
     }, 2500);
   };
   try {
-    const cacheBust = "?t=" + Date.now();
-    const fetchText = async (url, label) => {
-      const response = await fetch(url + cacheBust);
-      if (!response.ok) throw new Error(`${label}请求异常：${response.status}`);
-      return response.text();
-    };
-    const [portraitResult, drawerResult] = await Promise.allSettled([
-      fetchText(PORTRAIT_URL, "立绘库"),
-      fetchText(PORTRAIT_DRAWERS_URL, "抽屉配置"),
-    ]);
-
-    let nextDrawers = portraitDrawerConfig;
-    let drawerUpdated = false;
-    let portraitUpdated = false;
-    const errors = [];
-
-    if (drawerResult.status === "fulfilled") {
-      try {
-        nextDrawers = parsePortraitDrawerConfig(drawerResult.value);
-        getPortraitStorage().setItem(
-          PORTRAIT_DRAWERS_CACHE_KEY,
-          JSON.stringify(nextDrawers),
-        );
-        drawerUpdated = true;
-      } catch (e) {
-        errors.push("抽屉配置：" + e.message);
-      }
-    } else {
-      errors.push("抽屉配置：" + drawerResult.reason.message);
-    }
-
-    if (portraitResult.status === "fulfilled") {
-      try {
-        const incoming = parsePortraitCache(
-          portraitResult.value,
-          nextDrawers,
-        );
-        const portraitCount = Object.values(incoming.pools).reduce(
-          (total, pool) => total + Object.keys(pool).length,
-          0,
-        );
-        if (portraitCount === 0) {
-          throw new Error("远程立绘库为空或格式不正确");
-        }
-        getPortraitStorage().setItem(
-          PORTRAIT_CACHE_KEY,
-          JSON.stringify(incoming.raw),
-        );
-        portraitUpdated = true;
-      } catch (e) {
-        errors.push("立绘库：" + e.message);
-      }
-    } else {
-      errors.push("立绘库：" + portraitResult.reason.message);
-    }
-
-    if (!portraitUpdated && !drawerUpdated) {
-      throw new Error(errors.join("；"));
-    }
-
-    const loaded = await window.loadRemotePortraits();
+    const { portraitUpdated, drawerUpdated, errors } =
+      await syncRemotePortraitCaches();
+    const loaded = await window.loadRemotePortraits({
+      autoFetch: false,
+      suppressPrompt: true,
+    });
     if (!loaded && portraitUpdated) {
       throw new Error("新版立绘库写入后无法重新加载");
     }

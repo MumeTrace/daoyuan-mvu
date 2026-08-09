@@ -663,56 +663,27 @@ window.populateCharacterData = function(variablesOverride) {
       '<p style="color: var(--text-dim); font-style: italic;">暂无相关记录。</p>',
   );
 
-  /* 绝色榜页 */
-  let prevSearch = $("#portrait-search-input").val() || "";
-  let shouldRestoreSearch =
-    prevSearch.trim() !== "" &&
-    $("#portrait-search-result").css("display") !== "none";
-  let beautiesHtml =
-    '<div class="info-card" style="border-color:var(--rare-text); margin-bottom:15px; overflow:visible;"><div class="info-title" style="color:var(--rare-text);"><span>仙姿寻影 (全图鉴立绘检索)</span><span>🔍</span></div><div class="portrait-search-row" style="display:flex; gap:8px;"><input type="text" id="portrait-search-input" class="reply-input" placeholder="搜名字，或输“随机”抽卡..." value="' +
-    prevSearch +
-    '" onkeydown="if(event.key===\'Enter\'){event.preventDefault();event.stopPropagation();window.searchAndShowPortrait();}" style="flex:1; height:35px; padding:5px 10px; box-sizing:border-box;"><button class="reply-button" onclick="window.searchAndShowPortrait()" style="height:35px; min-width:60px; padding:0 15px;">搜索</button></div><div id="portrait-search-result" style="margin-top:15px; display:' +
-    (shouldRestoreSearch ? "block" : "none") +
-    ';"></div></div>';
   const sortedBeauties = Object.entries(beauties).sort(
     (a, b) => (a[1].排名 || 999) - (b[1].排名 || 999),
   );
-  sortedBeauties.slice(0, 2).forEach(([name, data]) => {
-    const portraitUrl = window.getPortraitUrl(name, data.性别);
-    const hasPortrait = !!portraitUrl;
-    const portraitSection = `
-                <div class="portrait-wrapper">
-                    <div class="portrait-actions">
-                    ${hasPortrait ? `<div class="portrait-toggle-btn" onclick="const p = this.parentElement.nextElementSibling; const img = p.querySelector('img'); if(!img.src) { img.src = img.dataset.src; } p.classList.toggle('show'); this.innerHTML = p.classList.contains('show') ? '收起立绘 ▲' : '查看立绘 ▼';">查看立绘 ▼</div>` : `<div class="portrait-toggle-btn" style="opacity:0.75;" onclick="event.stopPropagation(); window.showMissingPortraitDialog('${name}');" title="配置或获取角色立绘">暂无立绘</div>`}
-                    <div class="portrait-custom-btn" onclick="event.stopPropagation(); window.openCustomPortraitDialog('${name}');" title="设置立绘">🎨</div><div class="portrait-custom-btn" onclick="event.stopPropagation(); window.switchPortrait('${name}');" title="切换立绘">🔄</div>${renderDaoyuanApplause(name)}
-                </div>
-                    ${hasPortrait ? `<div class="large-portrait"><img data-src="${portraitUrl}" alt="${name}"></div>` : `<div class="large-portrait" style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;">点击「🎨 自定义」上传本地图片</div>`}
-                </div>`;
-
-    const safeBeautyName = String(name).replace(/"/g, '"');
-    beautiesHtml += `
-                <div class="info-card" data-beauty="${safeBeautyName}" style="border-color: rgba(217, 128, 250, 0.3);">
-                    <button class="card-discard" title="删除" data-beauty="${safeBeautyName}">✕</button>
-                    <div class="info-title">
-                        <span style="color:var(--rare-text)">第${data.排名 || 0}名：${name}</span>
-                        <span style="font-size:0.8em; color:var(--text-dim)">${data.头衔 || ""}</span>
-                    </div>
-                    <div class="info-text">
-                        <b>倾世仙姿：</b> <span style="color:#dcdde1">${data.仙姿 || ""}</span><br><br>
-                        <b>坊间群芳谱：</b> <i style="font-size:0.9em; color:#bbb;">"${data.群芳谱 || ""}"</i>
-                    </div>
-                    ${portraitSection}
-                </div>`;
-  });
-  $("#tab-database").html(
-    beautiesHtml ||
-      '<p style="color: var(--text-dim); font-style: italic;">暂无相关记录。</p>',
-  );
-  if (
-    shouldRestoreSearch &&
-    typeof window.searchAndShowPortrait === "function"
-  ) {
-    window.searchAndShowPortrait();
+  const cloneBeautyData = (value) => {
+    try {
+      if (typeof structuredClone === "function") {
+        return structuredClone(value || {});
+      }
+    } catch (error) {}
+    try {
+      return JSON.parse(JSON.stringify(value || {}));
+    } catch (error) {
+      return { ...(value || {}) };
+    }
+  };
+  const beautyCards = sortedBeauties.slice(0, 2).map(([name, data]) => ({
+    name,
+    data: cloneBeautyData(data),
+  }));
+  if (typeof window.setBeautyForumCards === "function") {
+    window.setBeautyForumCards(beautyCards);
   }
 
   /* 动向页 */

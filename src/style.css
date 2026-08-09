@@ -1173,7 +1173,7 @@ body {
   border-bottom: 2px solid var(--accent-gold);
   border-radius: 8px;
   width: 80%;
-  max-width: 350px;
+  max-width: 420px;
   padding: 25px;
   box-shadow:
     0 0 40px rgba(0, 0, 0, 0.9),
@@ -1211,6 +1211,29 @@ body {
   color: var(--text-main);
   line-height: 1.6;
   margin-bottom: 15px;
+}
+.faction-modal-map {
+  display: none;
+  margin: 15px 0;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+.faction-map-title {
+  margin-bottom: 8px;
+  color: var(--accent-mana);
+  font-size: 0.85em;
+  letter-spacing: 2px;
+}
+.faction-map-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  cursor: zoom-in;
+  object-fit: contain;
 }
 .faction-modal-footer {
   font-size: 0.75em;

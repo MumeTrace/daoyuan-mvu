@@ -31,6 +31,8 @@ window.refreshUserAvatar = function () {
 async function init() {
   /* 拉取云端立绘 */
   await window.loadRemotePortraits();
+  /* 拉取云端宗门舆图 */
+  await window.loadRemoteSectMaps();
   /* MVU架构接入 */
   await window.waitGlobalInitialized("Mvu");
 
@@ -508,27 +510,31 @@ window.getNoticeUnreadState = function () {
     data.tabs && data.tabs["立绘更新"] ? data.tabs["立绘更新"] : "",
   );
   const drawerUpdate = window.dyPortraitDrawerUpdateAvailable === true;
+  const portraitCacheMissing = window.dyPortraitCacheMissing === true;
   try {
     return {
       version:
         version !== "" &&
         localStorage.getItem(NOTICE_VERSION_READ_KEY) !== version,
       portrait:
+        portraitCacheMissing ||
         drawerUpdate ||
         (portraitUpdate !== "" &&
           localStorage.getItem(NOTICE_PORTRAIT_READ_KEY) !== portraitUpdate),
       versionValue: version,
       portraitValue: portraitUpdate,
       drawerUpdate,
+      portraitCacheMissing,
     };
   } catch (e) {
     console.warn("[道渊] 读取公告已读状态失败:", e);
     return {
       version: false,
-      portrait: drawerUpdate,
+      portrait: portraitCacheMissing || drawerUpdate,
       versionValue: version,
       portraitValue: portraitUpdate,
       drawerUpdate,
+      portraitCacheMissing,
     };
   }
 };

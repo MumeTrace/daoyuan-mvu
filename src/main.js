@@ -4,5 +4,6 @@ import "./components/settings.js";
 import "./components/lorebooks.js";
 import "./components/chat.js";
 import "./components/maps.js";
+import "./components/beauty-forum.js";
 import "./components/ui.js";
 import "./components/init.js";
