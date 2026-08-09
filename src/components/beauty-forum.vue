@@ -4,6 +4,7 @@ import { renderDaoyuanApplause } from "./applause.js";
 import {
   beautyForumState,
   applyBeautyForumPreset,
+  DEFAULT_BEAUTY_FORUM_REPLY_INSTRUCTION,
   deleteBeautyForumPreset,
   refreshBeautyForumPresets,
   saveBeautyForumSettings,
@@ -72,11 +73,8 @@ function cardFloorCount(name) {
   return threadFor(name).length;
 }
 
-function floorLabel(index) {
-  return `${index + 1}楼`;
-}
-
 function floorTime(floor) {
+  if (floor?.time) return floor.time;
   if (!floor?.createdAt) return "";
   const date = new Date(floor.createdAt);
   if (Number.isNaN(date.getTime())) return "";
@@ -84,6 +82,35 @@ function floorTime(floor) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatNowTime() {
+  const date = new Date();
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+}
+
+function nextForumFloor(thread) {
+  return (
+    thread.reduce((maxFloor, floor) => Math.max(maxFloor, Number(floor.floor) || 0), 0) +
+    1
+  );
+}
+
+function createForumFloor(content, floor, replyTo = null, status = "done") {
+  return {
+    id: `forum_${Date.now()}_${Math.floor(Math.random() * 1000)}_${floor}`,
+    content,
+    createdAt: Date.now(),
+    time: formatNowTime(),
+    replyTo,
+    floor,
+    likes: 0,
+    liked: false,
+    status,
+    error: "",
+  };
 }
 
 function escapeSelectorValue(value) {
@@ -127,6 +154,10 @@ function syncPortraitState() {
   });
 }
 
+function refreshPortraitConsumers() {
+  beautyForumState.portraitRevision += 1;
+}
+
 watch(
   () =>
     cards.value
@@ -165,69 +196,48 @@ function normalizeChatEndpoint(url) {
   return `${root}/chat/completions`;
 }
 
-function buildHeroContext() {
-  try {
-    const allVariables =
-      typeof window.getAllVariables === "function" ? window.getAllVariables() : {};
-    const stat = allVariables?.stat_data || {};
-    const hero = stat.主角 || {};
-    const world = stat.世界 || {};
-    const skills = hero.功法 || {};
-    const skillNames = Object.entries(skills)
-      .map(([name, data]) => `${name}(${data?.境界 || "未知"})`)
-      .join("、");
-    return (
-      `[主角当前状态]\n` +
-      `境界: ${hero.境界 || "未知"}\n` +
-      `所在界域: ${hero.所在界 || "未知"}\n` +
-      `当前地点: ${world.当前地点 || "未知"}\n` +
-      `当前时间: ${world.当前时间 || "未知"}\n` +
-      `灵根: ${hero.灵根 || "无"}\n` +
-      `功法: ${skillNames || "无"}`
-    );
-  } catch (error) {
-    return "";
-  }
-}
-
-function buildCharacterContext(card) {
-  try {
-    const allVariables =
-      typeof window.getAllVariables === "function" ? window.getAllVariables() : {};
-    const stat = allVariables?.stat_data || {};
-    const yujianData = stat.玉简?.[card.name] || {};
-    const mergedData = { ...(card?.data || {}) };
-    if (yujianData.境界) mergedData.境界 = yujianData.境界;
-    if (yujianData.性别) mergedData.性别 = yujianData.性别;
-    if (yujianData.关系) mergedData.关系 = yujianData.关系;
-    if (yujianData.好感度) mergedData.好感度 = yujianData.好感度;
-
-    let output = "\n\n[你的当前状态/面板设定]\n";
-    let hasValue = false;
-    Object.entries(mergedData).forEach(([key, value]) => {
-      if (typeof value !== "object" && value !== undefined && value !== null) {
-        output += `${key}: ${value}\n`;
-        hasValue = true;
-      }
-    });
-    return hasValue ? output : "";
-  } catch (error) {
-    return "";
-  }
-}
-
 function buildThreadHistory(floors, skipId) {
   const lines = [];
   const visibleFloors = skipId
     ? floors.filter((floor) => floor.id !== skipId)
     : floors;
   visibleFloors.forEach((floor, index) => {
-    lines.push(
-      `[${index + 1}楼] 主角: ${floor.userContent || ""}\n` +
-        (floor.aiContent ? `【回复】${floor.aiContent}` : ""),
-    );
+    const floorNo = floor.floor || index + 1;
+    const content = floor.content || floor.userContent || floor.aiContent || "";
+    if (content && floor.status !== "pending") {
+      lines.push(`#${floorNo}楼 匿名道友: ${content}`);
+    }
   });
-  return lines.join("\n\n");
+  return lines.join("\n");
+}
+
+function buildForumCommentPrompt(card, userMessage, floors, skipId) {
+  const settings = beautyForumState.settings || {};
+  const replyInstruction =
+    String(settings.replyInstruction || "").trim() ||
+    DEFAULT_BEAUTY_FORUM_REPLY_INSTRUCTION;
+  const extraPrompt = String(settings.extraPrompt || "").trim();
+  const historyText = buildThreadHistory(floors, skipId);
+  const data = card?.data || {};
+  let prompt =
+    `[绝色榜人物]\n` +
+    `角色: ${card.name}\n` +
+    `仙姿: ${data.仙姿 || ""}\n\n` +
+    `[群芳谱原作]\n` +
+    `${data.群芳谱 || ""}\n\n`;
+
+  if (historyText) {
+    prompt += `[历史回帖记录]\n${historyText}\n\n`;
+  }
+
+  prompt += `[上一条评论]\n匿名道友说: ${String(userMessage || "").trim()}\n\n`;
+
+  if (extraPrompt) {
+    prompt += `[回复指引]\n${extraPrompt}\n\n`;
+  }
+
+  prompt += `(${replyInstruction})`;
+  return prompt;
 }
 
 function cleanForumReply(rawReply) {
@@ -241,34 +251,17 @@ function cleanForumReply(rawReply) {
   } else {
     extracted = extracted.replace(/^[<q>"'「”]|["</q>'」]$/g, "").trim();
   }
-  return extracted || "对方传来了模糊不清的神念...";
+  return extracted || "这位道友敲了半天，最后只憋出一声冷笑。";
 }
 
 async function callForumGenerateReply(card, userMessage, floors, floorId) {
   const settings = beautyForumState.settings || {};
-  const extraPrompt = String(settings.extraPrompt || "").trim();
-  const heroContext = buildHeroContext();
-  const characterContext = buildCharacterContext(card);
-  const historyText = buildThreadHistory(floors, floorId);
-
-  let systemPrompt =
-    `[绝色榜回帖系统]\n` +
-    `你正在绝色榜下方的回帖区，以【${card.name}】的身份回复主角的留言。` +
-    `回复必须口语化、自然、简短，贴合人物性格，不要输出角色名、动作说明、标签或多余解释。`;
-
-  systemPrompt += `\n\n[绝色榜人物]\n`;
-  systemPrompt += `姓名: ${card.name}\n`;
-  systemPrompt += `排名: ${card?.data?.排名 || "未知"}\n`;
-  systemPrompt += `头衔: ${card?.data?.头衔 || "无"}\n`;
-  systemPrompt += `仙姿: ${card?.data?.仙姿 || "无"}\n`;
-  systemPrompt += `群芳谱: ${card?.data?.群芳谱 || "无"}`;
-
-  if (heroContext) systemPrompt += `\n\n${heroContext}`;
-  if (characterContext) systemPrompt += characterContext;
-  if (historyText) systemPrompt += `\n\n[历史回帖记录]\n${historyText}`;
-  if (extraPrompt) systemPrompt += `\n\n[附加设定/规则]\n${extraPrompt}`;
-
-  const userInput = String(userMessage || "").trim();
+  const systemPrompt = buildForumCommentPrompt(
+    card,
+    userMessage,
+    floors,
+    floorId,
+  );
   const customBase = normalizeApiRoot(settings.apiBaseUrl);
   const customModel = String(settings.apiModel || "").trim();
 
@@ -278,12 +271,12 @@ async function callForumGenerateReply(card, userMessage, floors, floorId) {
       model: customModel,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: userInput },
+        { role: "user", content: "请发表一段评论" },
       ],
       temperature: Number.isFinite(Number(settings.temperature))
         ? Number(settings.temperature)
-        : 0.7,
-      max_tokens: 1200,
+        : 0.85,
+      max_tokens: 500,
     };
     const headers = { "Content-Type": "application/json" };
     if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
@@ -308,7 +301,7 @@ async function callForumGenerateReply(card, userMessage, floors, floorId) {
   }
 
   if (typeof window.generate === "function") {
-    const combinedPrompt = `${systemPrompt}\n\n${userInput}`;
+    const combinedPrompt = `${systemPrompt}\n\n请发表一段评论`;
     const rawReply = await window.generate({
       user_input: combinedPrompt,
       should_stream: false,
@@ -334,6 +327,7 @@ async function fetchApiModels() {
     return;
   }
   try {
+    setBeautyForumStatus("正在获取模型列表...", "info");
     const headers = {};
     if (beautyForumState.settings.apiKey) {
       headers.Authorization = `Bearer ${beautyForumState.settings.apiKey}`;
@@ -454,13 +448,18 @@ async function retryFloor(card, floor) {
   floor.error = "";
   try {
     const floors = threadFor(card.name);
+    const sourceFloor =
+      floors.find((item) => Number(item.floor) === Number(floor.replyTo)) ||
+      floors[floors.indexOf(floor) - 1] ||
+      floor;
     const reply = await callForumGenerateReply(
       card,
-      floor.userContent,
+      sourceFloor.content || sourceFloor.userContent || "",
       floors,
       floor.id,
     );
-    floor.aiContent = reply || "对方似乎没有想好怎么回复...";
+    floor.content = reply || "这位道友敲了半天，最后只憋出一声冷笑。";
+    floor.time = formatNowTime();
     floor.status = "done";
     await scrollThreadToBottom(card.name);
   } catch (error) {
@@ -488,34 +487,35 @@ async function submitReply(card) {
   }
 
   const thread = threadFor(key);
-  const replyTo = thread.length > 0 ? thread[thread.length - 1].id : null;
-  const floor = {
-    id: `forum_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-    userContent: draft,
-    aiContent: "",
-    createdAt: Date.now(),
-    replyTo,
-    likes: 0,
-    liked: false,
-    status: "pending",
-    error: "",
-  };
+  const userFloorNo = nextForumFloor(thread);
+  const previousFloor = thread[thread.length - 1];
+  const previousFloorNo = previousFloor
+    ? Number(previousFloor.floor) || userFloorNo - 1
+    : null;
+  const userFloor = createForumFloor(draft, userFloorNo, previousFloorNo);
+  const aiFloor = createForumFloor(
+    "另一位匿名道友正在回帖...",
+    userFloorNo + 1,
+    userFloorNo,
+    "pending",
+  );
 
-  thread.push(floor);
+  thread.push(userFloor, aiFloor);
   beautyForumState.drafts[key] = "";
   beautyForumState.generatingName = key;
   setBeautyForumStatus(`正在为【${key}】生成回帖...`, "info");
 
   try {
-    const reply = await callForumGenerateReply(card, draft, thread, floor.id);
-    floor.aiContent = reply || "对方似乎没有想好怎么回复...";
-    floor.status = "done";
+    const reply = await callForumGenerateReply(card, draft, thread, aiFloor.id);
+    aiFloor.content = reply || "这位道友敲了半天，最后只憋出一声冷笑。";
+    aiFloor.time = formatNowTime();
+    aiFloor.status = "done";
     setBeautyForumStatus(`【${key}】回帖已生成。`, "success");
     await scrollThreadToBottom(key);
   } catch (error) {
-    floor.status = "error";
-    floor.error = error?.message || String(error);
-    setBeautyForumStatus(`回帖生成失败：${floor.error}`, "error");
+    aiFloor.status = "error";
+    aiFloor.error = error?.message || String(error);
+    setBeautyForumStatus(`回帖生成失败：${aiFloor.error}`, "error");
     await scrollThreadToBottom(key);
   } finally {
     beautyForumState.generatingName = "";
@@ -593,12 +593,29 @@ function openThreadSettings() {
   openSettings();
 }
 
+function showLoreByName(name) {
+  window.showLoreByName?.(name);
+}
+
+function showMissingPortraitDialog(name) {
+  window.showMissingPortraitDialog?.(name);
+}
+
+function openCustomPortraitDialog(name) {
+  window.openCustomPortraitDialog?.(name);
+}
+
+function switchPortrait(name) {
+  window.switchPortrait?.(name);
+}
+
 function closeStatusMessage() {
   beautyForumState.statusMessage = "";
   beautyForumState.statusTone = "info";
 }
 
 onMounted(async () => {
+  window.addEventListener("daoyuan_portraits_changed", refreshPortraitConsumers);
   await nextTick();
   refreshBeautyForumPresets();
   if (typeof window.injectPortraitDrawers === "function") {
@@ -607,6 +624,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("daoyuan_portraits_changed", refreshPortraitConsumers);
   deleteTimers.forEach((timer) => clearTimeout(timer));
   deleteTimers.clear();
 });
@@ -624,7 +642,7 @@ window.fetchBeautyForumModels = fetchApiModels;
             ⚙️
           </button>
         </div>
-        <div class="forum-topbar-subtitle">回帖状态只保存在当前页面内存里</div>
+        <div class="forum-topbar-subtitle">匿名道友的回帖只保存在本页内存里</div>
       </div>
     </div>
 
@@ -663,7 +681,7 @@ window.fetchBeautyForumModels = fetchApiModels;
           <span
             class="beauty-forum-name"
             title="点击探查天机"
-            @click.stop="window.showLoreByName?.(card.name)"
+            @click.stop="showLoreByName(card.name)"
           >
             第{{ rankLabel(card, index) }}名：{{ card.name }}
           </span>
@@ -691,7 +709,7 @@ window.fetchBeautyForumModels = fetchApiModels;
               class="portrait-toggle-btn"
               style="opacity:0.75;"
               title="配置或获取角色立绘"
-              @click.stop="window.showMissingPortraitDialog?.(card.name)"
+              @click.stop="showMissingPortraitDialog(card.name)"
             >
               暂无立绘
             </div>
@@ -699,14 +717,14 @@ window.fetchBeautyForumModels = fetchApiModels;
             <div
               class="portrait-custom-btn"
               title="设置立绘"
-              @click.stop="window.openCustomPortraitDialog?.(card.name)"
+              @click.stop="openCustomPortraitDialog(card.name)"
             >
               🎨
             </div>
             <div
               class="portrait-custom-btn"
               title="切换立绘"
-              @click.stop="window.switchPortrait?.(card.name)"
+              @click.stop="switchPortrait(card.name)"
             >
               🔄
             </div>
@@ -738,21 +756,21 @@ window.fetchBeautyForumModels = fetchApiModels;
           </div>
         </div>
 
-        <div v-show="isExpanded(card.name)" class="forum-panel">
-          <div class="forum-panel-head">
-            <div class="forum-panel-title">
-              <span>回帖</span>
-              <span class="forum-panel-count">共 {{ cardFloorCount(card.name) }} 楼</span>
-            </div>
-            <div class="forum-panel-actions">
-              <button class="forum-panel-btn compact" type="button" @click="retryFloor(card, threadFor(card.name)[threadFor(card.name).length - 1])" :disabled="!threadFor(card.name).length || !!beautyForumState.generatingName">
+          <div v-show="isExpanded(card.name)" class="forum-panel">
+            <div class="forum-panel-head">
+              <div class="forum-panel-title">
+                <span>回帖</span>
+                <span v-if="cardFloorCount(card.name)" class="forum-panel-count">{{ cardFloorCount(card.name) }}</span>
+              </div>
+              <div class="forum-panel-actions">
+                <button class="forum-panel-btn compact" type="button" @click="retryFloor(card, threadFor(card.name)[threadFor(card.name).length - 1])" :disabled="!threadFor(card.name).length || !!beautyForumState.generatingName">
                 ↻ 重写
               </button>
             </div>
           </div>
 
           <div v-if="!threadFor(card.name).length" class="forum-empty-thread">
-            还没有回帖，先留一条吧。
+            暂无回帖，发表首评
           </div>
 
           <div v-else class="forum-thread-list">
@@ -760,45 +778,32 @@ window.fetchBeautyForumModels = fetchApiModels;
               v-for="(floor, floorIndex) in threadFor(card.name)"
               :key="floor.id"
               class="forum-floor"
-              :class="{ error: floor.status === 'error' }"
+              :class="{ error: floor.status === 'error', 'is-reply': floorIndex > 0 }"
             >
               <div class="forum-floor-meta">
-                <span class="forum-floor-label">{{ floorLabel(floorIndex) }}</span>
+                <span class="forum-floor-speaker">匿名道友</span>
+                <span class="forum-floor-label">#{{ floor.floor }}</span>
                 <span class="forum-floor-time">{{ floorTime(floor) }}</span>
+                <button class="forum-floor-action fr-like" type="button" :class="{ liked: floor.liked }" @click="toggleLike(floor)">
+                  ❤ {{ floor.likes || 0 }}
+                </button>
+                <button class="forum-floor-action fr-del" type="button" title="删除此回帖" @click="deleteFloor(card.name, floor.id)">
+                  ⌫
+                </button>
               </div>
 
-              <div class="forum-floor-user">
-                <span class="forum-floor-speaker">主角</span>
-                <div class="forum-bubble forum-user-bubble">{{ floor.userContent }}</div>
-              </div>
-
-              <div class="forum-floor-ai">
-                <span class="forum-floor-speaker">{{ card.name }}</span>
-                <div class="forum-bubble forum-ai-bubble" :class="{ pending: floor.status === 'pending' }">
-                  <template v-if="floor.status === 'pending'">
-                    <span class="forum-loading-dot"></span>
-                    <span>对方正在回帖...</span>
-                  </template>
-                  <template v-else>
-                    {{ floor.aiContent || "对方似乎没有想好怎么回复..." }}
-                  </template>
-                </div>
+              <div class="forum-floor-content" :class="{ pending: floor.status === 'pending' }">
+                <template v-if="floor.status === 'pending'">
+                  <span class="forum-loading-dot"></span>
+                  <span>{{ floor.content }}</span>
+                </template>
+                <template v-else>
+                  {{ floor.content || "这位道友敲了半天，最后只憋出一声冷笑。" }}
+                </template>
               </div>
 
               <div v-if="floor.error" class="forum-floor-error">
                 {{ floor.error }}
-              </div>
-
-              <div class="forum-floor-actions">
-                <button class="forum-floor-action" type="button" @click="toggleLike(floor)">
-                  👍 {{ floor.likes || 0 }}
-                </button>
-                <button class="forum-floor-action" type="button" @click="retryFloor(card, floor)">
-                  ↻ 重写
-                </button>
-                <button class="forum-floor-action danger" type="button" @click="deleteFloor(card.name, floor.id)">
-                  🗑 删除
-                </button>
               </div>
             </article>
           </div>
@@ -810,7 +815,7 @@ window.fetchBeautyForumModels = fetchApiModels;
               rows="1"
               :placeholder="beautyForumState.generatingName && beautyForumState.generatingName !== card.name
                 ? '正在生成其他回帖...'
-                : `给【${card.name}】留下一条回帖...`"
+                : '输入回帖内容...（Enter 发送）'"
               :disabled="!!beautyForumState.generatingName"
               @input="resizeReplyInput"
               @keydown="onDraftKeydown(card, $event)"
@@ -821,7 +826,7 @@ window.fetchBeautyForumModels = fetchApiModels;
               :disabled="!!beautyForumState.generatingName"
               @click="submitReply(card)"
             >
-              {{ beautyForumState.generatingName === card.name ? "发送中..." : "发送" }}
+              {{ beautyForumState.generatingName === card.name ? "…" : "➤" }}
             </button>
           </div>
         </div>
@@ -847,7 +852,7 @@ window.fetchBeautyForumModels = fetchApiModels;
                 v-model="beautyForumState.settingsPresetName"
                 class="reply-input forum-preset-select"
               >
-                <option value="">-- 当前手动配置 --</option>
+                <option value="">-- 手动配置 --</option>
                 <option
                   v-for="preset in beautyForumState.presetNames"
                   :key="preset"
@@ -888,7 +893,7 @@ window.fetchBeautyForumModels = fetchApiModels;
             </label>
 
             <div class="forum-model-row">
-              <button class="forum-panel-btn" type="button" @click="window.fetchBeautyForumModels?.()">
+              <button class="forum-panel-btn" type="button" @click="fetchApiModels">
                 获取模型
               </button>
               <select
@@ -903,11 +908,20 @@ window.fetchBeautyForumModels = fetchApiModels;
             </div>
 
             <label class="forum-field">
+              <span>回复人设 / 规则</span>
+              <textarea
+                v-model="beautyForumState.settings.replyInstruction"
+                rows="3"
+                placeholder="设置另一位匿名道友要怎么回复..."
+              />
+            </label>
+
+            <label class="forum-field">
               <span>附加设定 / 规则</span>
               <textarea
                 v-model="beautyForumState.settings.extraPrompt"
                 rows="4"
-                placeholder="例如：回复要口语化、简短、带一点傲娇感。"
+                placeholder="给匿名道友回复的额外指引，例如语气偏好、禁忌话题..."
               />
             </label>
 
@@ -923,7 +937,7 @@ window.fetchBeautyForumModels = fetchApiModels;
             class="forum-settings-status"
             :data-tone="beautyForumState.statusTone"
           >
-            {{ beautyForumState.statusMessage || "设定只在当前浏览器本地保存。" }}
+            {{ beautyForumState.statusMessage || "设定只保存在本地浏览器。" }}
           </div>
           <div class="forum-settings-actions">
             <button class="forum-panel-btn" type="button" @click="closeStatusMessage">清空提示</button>
@@ -1115,7 +1129,7 @@ window.fetchBeautyForumModels = fetchApiModels;
 .forum-panel-title {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   color: var(--accent-gold);
@@ -1126,7 +1140,7 @@ window.fetchBeautyForumModels = fetchApiModels;
 
 .forum-panel-count {
   color: var(--text-dim);
-  font-size: 0.8em;
+  font-size: 0.86em;
   font-weight: 400;
   white-space: nowrap;
 }
@@ -1204,32 +1218,45 @@ window.fetchBeautyForumModels = fetchApiModels;
 .forum-thread-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 5px;
   max-height: 340px;
   overflow: auto;
-  padding-right: 4px;
+  padding-right: 2px;
 }
 
 .forum-floor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: linear-gradient(145deg, rgba(20, 20, 28, 0.72), rgba(12, 12, 18, 0.9));
+  position: relative;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .forum-floor.error {
   border-color: rgba(255, 77, 77, 0.22);
 }
 
+.forum-floor.is-reply {
+  padding-left: 46px;
+  border-left-color: rgba(216, 193, 136, 0.18);
+}
+
+.forum-floor.is-reply::before {
+  content: "↳";
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  color: var(--accent-gold);
+  font-size: 0.9em;
+}
+
 .forum-floor-meta {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
   color: var(--text-dim);
-  font-size: 0.72em;
+  font-size: 0.68em;
+  min-height: 16px;
 }
 
 .forum-floor-label {
@@ -1237,47 +1264,31 @@ window.fetchBeautyForumModels = fetchApiModels;
   font-weight: 700;
 }
 
-.forum-floor-user,
-.forum-floor-ai {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
 .forum-floor-speaker {
-  flex-shrink: 0;
-  min-width: 3.4em;
-  color: var(--text-dim);
-  font-size: 0.78em;
-  text-align: right;
+  color: var(--accent-gold);
+  font-size: 1em;
+  white-space: nowrap;
 }
 
-.forum-bubble {
-  min-width: 0;
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 8px;
-  line-height: 1.65;
+.forum-floor-time {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.forum-floor-content {
+  margin-top: 4px;
+  color: var(--text-main);
+  font-size: 0.84em;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.forum-user-bubble {
-  color: var(--text-main);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.forum-ai-bubble {
-  color: #f1e7ff;
-  background: linear-gradient(145deg, rgba(88, 72, 110, 0.22), rgba(48, 32, 64, 0.42));
-  border: 1px solid rgba(163, 120, 214, 0.25);
-}
-
-.forum-ai-bubble.pending {
+.forum-floor-content.pending {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--text-dim);
 }
 
@@ -1291,52 +1302,66 @@ window.fetchBeautyForumModels = fetchApiModels;
 }
 
 .forum-floor-error {
-  padding-left: 3.9em;
+  margin-top: 4px;
   color: var(--accent-blood);
   font-size: 0.76em;
 }
 
-.forum-floor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-left: 3.9em;
-}
-
 .forum-floor-action {
-  padding: 5px 9px;
-  color: var(--text-dim);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  padding: 0 2px;
+  color: rgba(166, 158, 138, 0.72);
+  background: transparent;
+  border: 0;
   cursor: pointer;
   font: inherit;
-  font-size: 0.78em;
+  font-size: 1em;
+  line-height: 1;
 }
 
-.forum-floor-action.danger {
+.forum-floor-action.liked,
+.forum-floor-action:hover {
+  color: var(--accent-gold);
+}
+
+.fr-del:hover {
   color: var(--accent-blood);
+}
+
+.fr-del {
+  font-size: 1.08em;
+  transform: translateY(-1px);
 }
 
 .forum-input-box {
   display: flex;
-  gap: 8px;
-  align-items: stretch;
+  gap: 6px;
+  align-items: center;
 }
 
 .forum-reply-input {
   flex: 1;
   min-width: 0;
-  min-height: 38px;
-  max-height: 120px;
-  resize: vertical;
+  box-sizing: border-box;
+  height: 30px;
+  min-height: 30px;
+  max-height: 72px;
+  padding: 5px 8px;
+  font-size: 0.8em;
+  line-height: 1.35;
+  resize: none;
 }
 
 .forum-send-btn {
-  flex: 0 0 74px;
-  width: 74px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 30px;
+  min-height: 30px;
   min-width: 0;
-  padding-inline: 0;
+  padding: 0;
+  font-size: 1em;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(138, 119, 72, 0.92), rgba(82, 71, 46, 0.92));
+  box-shadow: 0 2px 8px rgba(216, 193, 136, 0.12);
   white-space: nowrap;
 }
 
@@ -1550,23 +1575,12 @@ window.fetchBeautyForumModels = fetchApiModels;
 
   .forum-input-box {
     flex-direction: row;
-    align-items: stretch;
+    align-items: center;
   }
 
   .forum-send-btn {
-    flex-basis: 64px;
-    width: 64px;
-  }
-
-  .forum-floor-user,
-  .forum-floor-ai {
-    flex-direction: column;
-  }
-
-  .forum-floor-speaker,
-  .forum-floor-error,
-  .forum-floor-actions {
-    padding-left: 0;
+    flex-basis: 34px;
+    width: 34px;
   }
 }
 </style>

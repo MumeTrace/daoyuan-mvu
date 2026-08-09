@@ -440,8 +440,8 @@ function getCharacterAffection(name) {
 function isPortraitPoolVisible(name, poolId) {
   const resolved = resolvePortraitPoolId(poolId);
   if (resolved === "normal") return true;
-  if (!publishedPortraitPoolIds.has(resolved)) return false;
-  const hasPortrait = Boolean((portraitPools[resolved] || {})[name]);
+  const hasPortrait = Boolean(getPortraitPoolValue(name, resolved));
+  if (!publishedPortraitPoolIds.has(resolved) && !hasPortrait) return false;
   if (resolved === "female") return hasPortrait;
   if (resolved === "special") {
     return hasPortrait && getCharacterAffection(name) > 90;
@@ -490,7 +490,34 @@ window.setActivePortraitPool = function (name, poolId) {
 
 function getPortraitPoolValue(name, poolId) {
   const resolved = resolvePortraitPoolId(poolId);
-  return (portraitPools[resolved] || {})[name] || "";
+  const runtimeValue = (portraitPools[resolved] || {})[name];
+  if (runtimeValue) return runtimeValue;
+
+  const sharedRuntimeValue = (window.portraitPools?.[resolved] || {})[name];
+  if (sharedRuntimeValue) return sharedRuntimeValue;
+
+  const customValue = getCustomPortraitMap(resolved)[name];
+  if (customValue) return customValue;
+
+  const legacyCustomKey = LEGACY_PORTRAIT_CUSTOM_KEYS[resolved];
+  if (legacyCustomKey) {
+    const legacyCustomValue = normalizePortraitMap(
+      readPortraitJson(legacyCustomKey, {}),
+    )[name];
+    if (legacyCustomValue) return legacyCustomValue;
+  }
+
+  const sourceKey = getDrawerPool(resolved)?.sourceKey;
+  const legacyRuntimeValue = sourceKey
+    ? normalizePortraitMap(window[sourceKey])[name]
+    : "";
+  if (legacyRuntimeValue) return legacyRuntimeValue;
+
+  return (
+    (defaultPortraitPools[resolved] || {})[name] ||
+    (window.defaultPortraitPools?.[resolved] || {})[name] ||
+    ""
+  );
 }
 
 function renderPortraitDrawerIcon(icon) {
@@ -887,6 +914,7 @@ window.switchPortraitInPool = function (name, poolId) {
     const nextIndex = (currentIndex + 1) % urls.length;
     setPortraitIndex(name, poolId, nextIndex);
     window.updatePortraitView(name, urls[nextIndex]);
+    notifyPortraitConsumers();
     done = true;
   }
   if (!done) {
@@ -1351,6 +1379,7 @@ window.saveCustomPortrait = function (name, url, mode = "normal") {
     }
     refreshVisiblePortraitSearch();
     window.updatePortraitView(name, splitPortraitUrls(normalizedUrl)[0] || "");
+    notifyPortraitConsumers();
     return true;
   } catch (e) {
     console.warn("[道渊] 保存自定义立绘失败:", e);
@@ -1420,6 +1449,8 @@ window.removeCustomPortrait = function (name, mode = "normal") {
       window.populateCharacterData();
     }
     refreshVisiblePortraitSearch();
+    window.updatePortraitView(name, splitPortraitUrls(defaultValue)[0] || "");
+    notifyPortraitConsumers();
     return true;
   } catch (e) {
     console.warn("[道渊] 删除自定义立绘失败:", e);
