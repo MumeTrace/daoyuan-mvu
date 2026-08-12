@@ -1,4 +1,5 @@
 import "./components/html-loader.js";
+import "./features/image-library/index.js";
 import "./components/portraits.js";
 import "./components/settings.js";
 import "./components/lorebooks.js";

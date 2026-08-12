@@ -97,18 +97,17 @@ const requiredMarkers = [
   "getButtonEvent",
   "VARIABLE_UPDATE_ENDED",
   "__daoyuanFloatingBridge",
-  "portrait-drawers.json",
-  "daoyuan_portrait_drawers_cache",
-  "daoyuan_active_portrait_pools",
-  "publishedPortraitPoolIds",
-  "daoyuan_portrait_storage_migration_version",
-  "daoyuan_custom_portraits_pool_",
+  "images.json",
+  "daoyuan_images_cache_v2",
+  "daoyuan_portrait_preferences_v2",
+  "daoyuan_portrait_preferences_migration_version",
+  "daoyuan_images_changed",
   "portrait-pool-selector",
   "portrait-pool-body-open",
   "switchPortraitInPool",
-  "checkRemotePortraitDrawerUpdate",
-  "dyPortraitDrawerUpdateAvailable",
+  "dyImageCacheMissing",
   "dyPortraitCacheMissing",
+  "getSectMapImages",
   "DaoyuanStatusStorage",
   "sharedStatusStorage",
   "portraitRevision",
@@ -118,9 +117,21 @@ const missingMarkers = requiredMarkers.filter(
   marker => !scriptContent.includes(marker),
 );
 
+const forbiddenLegacyImageFiles = [
+  "portraits.json",
+  "portrait-drawers.json",
+  "sect-maps.json",
+].filter(marker => scriptContent.includes(marker));
+
 if (missingMarkers.length > 0) {
   throw new Error(
     `Floating MVU output is missing markers: ${missingMarkers.join(", ")}`,
+  );
+}
+
+if (forbiddenLegacyImageFiles.length > 0) {
+  throw new Error(
+    `Floating MVU still references legacy image files: ${forbiddenLegacyImageFiles.join(", ")}`,
   );
 }
 

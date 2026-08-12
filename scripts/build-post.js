@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pretty from 'pretty';
+import { encodeRegexReplacementTokens } from './regex-replacement-safety.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,9 +40,13 @@ function main() {
     }
   }
   const fence = '`'.repeat(backtickCount);
+  const regexSafeHtml = encodeRegexReplacementTokens(distHtml);
 
   // Wrap the HTML content in markdown code block
-  data.replaceString = `${fence}html\n${distHtml}\n${fence}`;
+  // Tavern Helper interprets $1, $2, $&, etc. inside regex replacement
+  // strings, potentially more than once. JavaScript Unicode escapes keep
+  // those tokens out of the stored replacement while preserving runtime code.
+  data.replaceString = `${fence}html\n${regexSafeHtml}\n${fence}`;
 
   // Make sure output folder exists
   const outputDir = path.dirname(OUTPUT_JSON_PATH);

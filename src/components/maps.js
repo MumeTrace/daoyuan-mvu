@@ -1,66 +1,18 @@
+import {
+  getImageLibraryState,
+  getSectMapImages,
+  initializeImageLibrary,
+} from "../features/image-library/index.js";
+
 /* --- Xuantian Realm Map Logic --- */
-const SECT_MAP_CACHE_KEY = "daoyuan_sect_maps_cache";
-const SECT_MAP_URL =
-  "https://raw.githubusercontent.com/YttriumCarbide/Daoyuan/main/sect-maps.json";
-
-window.sectMapImages = window.sectMapImages || {};
-
-function getMapStorage() {
-  return window.DaoyuanStatusStorage || window.localStorage;
-}
-
-function normalizeSectMapImages(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
-  const result = {};
-  for (const [sectName, value] of Object.entries(data)) {
-    if (typeof value === "string") {
-      const url = value.trim();
-      if (url.startsWith("http") || url.startsWith("data:image")) {
-        result[sectName.trim()] = url;
-      }
-      continue;
-    }
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      Object.assign(result, normalizeSectMapImages(value));
-    }
-  }
-  return result;
-}
-
-function applySectMapImages(data) {
-  window.sectMapImages = normalizeSectMapImages(data);
-  return window.sectMapImages;
-}
 
 window.getSectMapImageUrl = function (sectName) {
-  return window.sectMapImages[String(sectName || "").trim()] || "";
+  return getSectMapImages(sectName)[0]?.url || "";
 };
 
 window.loadRemoteSectMaps = async function (options = {}) {
-  const { autoFetch = true } = options;
-  try {
-    const cached = getMapStorage().getItem(SECT_MAP_CACHE_KEY);
-    if (cached) {
-      applySectMapImages(JSON.parse(cached));
-    }
-  } catch (e) {
-    console.warn("[道渊状态栏] 读取宗门舆图缓存失败:", e);
-    applySectMapImages({});
-  }
-
-  if (!autoFetch) return Object.keys(window.sectMapImages).length > 0;
-
-  try {
-    const response = await fetch(SECT_MAP_URL + "?t=" + Date.now());
-    if (!response.ok) throw new Error(`宗门舆图请求异常：${response.status}`);
-    const remoteMaps = normalizeSectMapImages(await response.json());
-    getMapStorage().setItem(SECT_MAP_CACHE_KEY, JSON.stringify(remoteMaps));
-    applySectMapImages(remoteMaps);
-    return true;
-  } catch (e) {
-    console.warn("[道渊状态栏] 同步宗门舆图失败，沿用本地缓存:", e);
-    return Object.keys(window.sectMapImages).length > 0;
-  }
+  if (getImageLibraryState().loaded) return true;
+  return initializeImageLibrary({ autoFetch: options.autoFetch !== false });
 };
 
 function openImageModal(imageUrl) {

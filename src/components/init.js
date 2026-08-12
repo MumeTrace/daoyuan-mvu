@@ -29,10 +29,8 @@ window.refreshUserAvatar = function () {
 };
 
 async function init() {
-  /* 拉取云端立绘 */
+  /* 统一加载人物立绘与宗门图片 */
   await window.loadRemotePortraits();
-  /* 拉取云端宗门舆图 */
-  await window.loadRemoteSectMaps();
   /* MVU架构接入 */
   await window.waitGlobalInitialized("Mvu");
 
@@ -509,7 +507,6 @@ window.getNoticeUnreadState = function () {
   const portraitUpdate = String(
     data.tabs && data.tabs["立绘更新"] ? data.tabs["立绘更新"] : "",
   );
-  const drawerUpdate = window.dyPortraitDrawerUpdateAvailable === true;
   const portraitCacheMissing = window.dyPortraitCacheMissing === true;
   try {
     return {
@@ -518,22 +515,19 @@ window.getNoticeUnreadState = function () {
         localStorage.getItem(NOTICE_VERSION_READ_KEY) !== version,
       portrait:
         portraitCacheMissing ||
-        drawerUpdate ||
         (portraitUpdate !== "" &&
           localStorage.getItem(NOTICE_PORTRAIT_READ_KEY) !== portraitUpdate),
       versionValue: version,
       portraitValue: portraitUpdate,
-      drawerUpdate,
       portraitCacheMissing,
     };
   } catch (e) {
     console.warn("[道渊] 读取公告已读状态失败:", e);
     return {
       version: false,
-      portrait: portraitCacheMissing || drawerUpdate,
+      portrait: portraitCacheMissing,
       versionValue: version,
       portraitValue: portraitUpdate,
-      drawerUpdate,
       portraitCacheMissing,
     };
   }
@@ -629,9 +623,6 @@ window.loadRemoteNotice = async function () {
   } catch (e) {
     console.error("[道渊] 获取公告失败:", e);
   }
-  if (typeof window.checkRemotePortraitDrawerUpdate === "function") {
-    await window.checkRemotePortraitDrawerUpdate();
-  }
   window.updateNoticeHeaderAttention();
 };
 window.dySanitizeHtml = function (str) {
@@ -702,7 +693,7 @@ window.fetchAndShowNotice = async function () {
       '<div style="margin-bottom:12px;"><a href="https://daoyuan.mayuworld.com/" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;background:linear-gradient(145deg, rgba(255,215,0,0.1), rgba(255,215,0,0.02));border:1px solid rgba(255,215,0,0.3);border-radius:24px;color:var(--accent-gold);text-decoration:none;font-size:1em;letter-spacing:1px;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(255,215,0,0.05);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(255,215,0,0.2), rgba(255,215,0,0.05))\'; this.style.boxShadow=\'0 0 15px rgba(255,215,0,0.2)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(255,215,0,0.1), rgba(255,215,0,0.02))\'; this.style.boxShadow=\'0 2px 10px rgba(255,215,0,0.05)\'; this.style.transform=\'none\';"><span>📖 查阅道渊 Wiki 图鉴</span><span style="font-size:0.8em;opacity:0.8">➔</span></a></div>' +
       '<div><button class="' +
       (noticeUnread.portrait ? "dy-update-attention" : "") +
-      '" onclick="window.markPortraitUpdateRead(this); window.forceUpdateRemotePortraits(this)" style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;background:linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02));border:1px solid rgba(100,180,255,0.3);border-radius:24px;color:#64b4ff;cursor:pointer;font-size:0.95em;letter-spacing:1px;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(100,180,255,0.05);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.2), rgba(100,180,255,0.05))\'; this.style.boxShadow=\'0 0 15px rgba(100,180,255,0.2)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02))\'; this.style.boxShadow=\'0 2px 10px rgba(100,180,255,0.05)\'; this.style.transform=\'none\';">🖼️ 同步最新立绘库</button></div>';
+      '" onclick="window.markPortraitUpdateRead(this); window.forceUpdateRemotePortraits(this)" style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;background:linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02));border:1px solid rgba(100,180,255,0.3);border-radius:24px;color:#64b4ff;cursor:pointer;font-size:0.95em;letter-spacing:1px;font-weight:bold;transition:all 0.3s ease;box-shadow:0 2px 10px rgba(100,180,255,0.05);" onmouseover="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.2), rgba(100,180,255,0.05))\'; this.style.boxShadow=\'0 0 15px rgba(100,180,255,0.2)\'; this.style.transform=\'translateY(-1px)\';" onmouseout="this.style.background=\'linear-gradient(145deg, rgba(100,180,255,0.1), rgba(100,180,255,0.02))\'; this.style.boxShadow=\'0 2px 10px rgba(100,180,255,0.05)\'; this.style.transform=\'none\';">🖼️ 同步最新图片库</button></div>';
 
   if (!window.showWarningModal) {
     window.showWarningModal = function(e) {
