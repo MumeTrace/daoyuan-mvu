@@ -1173,7 +1173,7 @@ body {
   border-bottom: 2px solid var(--accent-gold);
   border-radius: 8px;
   width: 80%;
-  max-width: 350px;
+  max-width: 420px;
   padding: 25px;
   box-shadow:
     0 0 40px rgba(0, 0, 0, 0.9),
@@ -1211,6 +1211,29 @@ body {
   color: var(--text-main);
   line-height: 1.6;
   margin-bottom: 15px;
+}
+.faction-modal-map {
+  display: none;
+  margin: 15px 0;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+.faction-map-title {
+  margin-bottom: 8px;
+  color: var(--accent-mana);
+  font-size: 0.85em;
+  letter-spacing: 2px;
+}
+.faction-map-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  cursor: zoom-in;
+  object-fit: contain;
 }
 .faction-modal-footer {
   font-size: 0.75em;
@@ -1815,6 +1838,152 @@ body {
     transparent
   );
   box-shadow: 0 0 8px rgba(100, 180, 255, 0.3);
+}
+.portrait-pool-selector {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  z-index: 20;
+}
+.portrait-pool-toggle {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 0 3px;
+  border: 1px dashed rgba(255, 215, 0, 0.5);
+  border-radius: 4px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 215, 0, 0.12),
+    transparent
+  );
+  color: var(--accent-gold);
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.portrait-pool-toggle:hover,
+.portrait-pool-toggle:focus-visible,
+.portrait-pool-selector.is-open .portrait-pool-toggle {
+  outline: none;
+  background: rgba(255, 215, 0, 0.16);
+  box-shadow: 0 0 9px var(--accent-gold-glow);
+}
+.portrait-pool-toggle-label {
+  display: none;
+}
+.portrait-pool-arrow {
+  font-size: 0.7em;
+  transition: transform 0.2s ease;
+}
+.portrait-pool-selector.is-open .portrait-pool-arrow {
+  transform: rotate(180deg);
+}
+.portrait-pool-icon-image {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+.portrait-pool-icon-text {
+  line-height: 1;
+  white-space: nowrap;
+}
+.portrait-pool-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 112px;
+  max-width: min(210px, 70vw);
+  max-height: 220px;
+  padding: 6px;
+  gap: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 215, 0, 0.42);
+  border-radius: 8px;
+  background: linear-gradient(
+    145deg,
+    rgba(26, 23, 31, 0.98),
+    rgba(12, 10, 16, 0.99)
+  );
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-5px) scale(0.98);
+  transform-origin: top right;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0.18s ease;
+  pointer-events: none;
+  z-index: 1000;
+}
+.portrait-pool-selector.is-open .portrait-pool-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.portrait-pool-selector.opens-up .portrait-pool-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform: translateY(5px) scale(0.98);
+  transform-origin: bottom right;
+}
+.portrait-pool-selector.opens-up.is-open .portrait-pool-menu {
+  transform: translateY(0) scale(1);
+}
+.portrait-pool-option {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 9px;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.portrait-pool-option:hover,
+.portrait-pool-option:focus-visible {
+  outline: none;
+  border-color: rgba(255, 215, 0, 0.25);
+  background: rgba(255, 215, 0, 0.08);
+}
+.portrait-pool-option.is-active {
+  border-color: rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.14);
+  color: var(--accent-gold);
+}
+.info-card.portrait-pool-open,
+.partner-card.portrait-pool-open,
+.npc-card.portrait-pool-open {
+  overflow: visible;
+  z-index: 25;
+}
+.card-collapse-body.portrait-pool-body-open {
+  overflow: visible;
+}
+@media (max-width: 600px) {
+  .portrait-pool-menu {
+    min-width: 124px;
+    max-height: min(210px, 44vh);
+  }
+  .portrait-pool-option {
+    min-height: 38px;
+  }
 }
 .portrait-applause {
   display: inline-grid;

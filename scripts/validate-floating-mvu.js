@@ -53,7 +53,12 @@ const requiredMarkers = [
   "daoyuan-floating-mvu-resize-",
   "daoyuan-floating-mvu-pet-style",
   "resizeHandleSettings",
+  "daoyuan-floating-mvu-layout-v4",
   "daoyuan-floating-mvu-layout-v3",
+  "mobile-portrait",
+  "mobile-landscape",
+  "activeLayoutProfile",
+  "applyLoadedLayout",
   "setPetState",
   "petTransitionTimer",
   "petBubbleTimer",
@@ -64,15 +69,22 @@ const requiredMarkers = [
   "dy-pet-open",
   "dy-pet-close",
   "dy-pet-release",
+  "dy-pet-peek",
   "dy-pet-update-bubble",
+  "launcherDockSide",
+  "getLauncherDockSideFromRect",
+  "data-dock-side",
   "setPetUpdateNotice",
   "isDangerousMvuData",
-  "嗯？命数动了。",
-  "莫敲头。 (눈_눈)",
-  "来，给你看。",
-  "有事再唤我。",
-  "……放手。",
-  "站我身后。",
+  "南可熙",
+  "哟，棋局又动了。",
+  "嘶——别敲本姑娘！",
+  "来，本姑娘给你瞧瞧。",
+  "行啦，本姑娘歇会儿。",
+  "喂！别提本姑娘的腰！",
+  "嘘，本姑娘在这儿看着。",
+  "真是杂鱼……退后。",
+  "transform-origin:52% 20%",
   "rgba(92,196,255,.82)",
   "#d8f5ff",
   "(pointer: coarse)",
@@ -85,14 +97,41 @@ const requiredMarkers = [
   "getButtonEvent",
   "VARIABLE_UPDATE_ENDED",
   "__daoyuanFloatingBridge",
+  "images.json",
+  "daoyuan_images_cache_v2",
+  "daoyuan_portrait_preferences_v2",
+  "daoyuan_portrait_preferences_migration_version",
+  "daoyuan_images_changed",
+  "portrait-pool-selector",
+  "portrait-pool-body-open",
+  "switchPortraitInPool",
+  "dyImageCacheMissing",
+  "dyPortraitCacheMissing",
+  "getSectMapImages",
+  "DaoyuanStatusStorage",
+  "sharedStatusStorage",
+  "portraitRevision",
+  "replaceChildren",
 ];
 const missingMarkers = requiredMarkers.filter(
   marker => !scriptContent.includes(marker),
 );
 
+const forbiddenLegacyImageFiles = [
+  "portraits.json",
+  "portrait-drawers.json",
+  "sect-maps.json",
+].filter(marker => scriptContent.includes(marker));
+
 if (missingMarkers.length > 0) {
   throw new Error(
     `Floating MVU output is missing markers: ${missingMarkers.join(", ")}`,
+  );
+}
+
+if (forbiddenLegacyImageFiles.length > 0) {
+  throw new Error(
+    `Floating MVU still references legacy image files: ${forbiddenLegacyImageFiles.join(", ")}`,
   );
 }
 
@@ -114,9 +153,9 @@ const embeddedPetImages = [
   ...scriptContent.matchAll(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/g),
 ].map(match => Buffer.from(match[1], "base64"));
 
-if (embeddedPetImages.length !== 5) {
+if (embeddedPetImages.length !== 7) {
   throw new Error(
-    `Expected 5 embedded floating pet WebP states, found ${embeddedPetImages.length}`,
+    `Expected 7 embedded floating pet WebP states, found ${embeddedPetImages.length}`,
   );
 }
 
@@ -144,5 +183,5 @@ if (/<\/script/i.test(scriptContent)) {
 new vm.Script(scriptContent, { filename: "daoyuan-floating-mvu.content.js" });
 
 console.log(
-  "Validated Tavern Helper JSON schema, five embedded pet states, floating MVU markers, and JavaScript syntax",
+  "Validated Tavern Helper JSON schema, seven embedded pet states, floating MVU markers, and JavaScript syntax",
 );

@@ -1,4 +1,54 @@
+import {
+  getImageLibraryState,
+  getSectMapImages,
+  initializeImageLibrary,
+} from "../features/image-library/index.js";
+
 /* --- Xuantian Realm Map Logic --- */
+
+window.getSectMapImageUrl = function (sectName) {
+  return getSectMapImages(sectName)[0]?.url || "";
+};
+
+window.loadRemoteSectMaps = async function (options = {}) {
+  if (getImageLibraryState().loaded) return true;
+  return initializeImageLibrary({ autoFetch: options.autoFetch !== false });
+};
+
+function openImageModal(imageUrl) {
+  const modalImage = document.getElementById("modal-image");
+  const modalOverlay = document.getElementById("image-modal-overlay");
+  if (!modalImage || !modalOverlay || !imageUrl) return;
+  modalImage.src = imageUrl;
+  modalOverlay.style.display = "flex";
+}
+
+function renderFactionMap(faction) {
+  const container = document.getElementById("faction-modal-map");
+  if (!container) return;
+  container.replaceChildren();
+
+  const imageUrl = window.getSectMapImageUrl(faction.name);
+  if (!imageUrl) {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "block";
+  const title = document.createElement("div");
+  title.className = "faction-map-title";
+  title.textContent = "宗门舆图";
+
+  const image = document.createElement("img");
+  image.className = "faction-map-image";
+  image.src = imageUrl;
+  image.alt = `${faction.name}宗门舆图`;
+  image.title = "点击放大查看";
+  image.addEventListener("click", () => openImageModal(imageUrl));
+
+  container.append(title, image);
+}
+
 window.xuantianLore = {
         "center": {
             name: "中央神州",
@@ -425,6 +475,7 @@ window.showLocationDetails = function(data) {
           "【" + fac.name + "】";
         document.getElementById("faction-modal-note").textContent =
           fac.note || "暂无详细信息";
+        renderFactionMap(fac);
         document.getElementById("faction-modal-overlay").style.display = "flex";
       };
 
