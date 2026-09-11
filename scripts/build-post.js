@@ -13,6 +13,7 @@ const OUTPUT_JSON_PATH = path.resolve(__dirname, `../dist/regex-${target}.json`)
 const DIST_HTML_PATH = path.resolve(__dirname, '../dist/index.html');
 
 function main() {
+  console.log(`[道渊构建] target=${target} step=regex-postprocess`);
   if (!fs.existsSync(DIST_HTML_PATH)) {
     console.error(`Build output not found at ${DIST_HTML_PATH}. Did you run pnpm build first?`);
     process.exit(1);
@@ -55,7 +56,7 @@ function main() {
   }
 
   fs.writeFileSync(OUTPUT_JSON_PATH, JSON.stringify(data, null, 4), 'utf8');
-  console.log(`Successfully compiled and generated output at ${OUTPUT_JSON_PATH}`);
+  console.log(`[道渊构建] target=${target} generated=${OUTPUT_JSON_PATH}`);
 }
 
 main();

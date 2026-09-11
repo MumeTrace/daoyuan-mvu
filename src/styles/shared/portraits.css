@@ -1,0 +1,566 @@
+.portrait-custom-btn {
+  display: grid;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  margin-left: 0;
+  padding: 0;
+  place-items: center;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(100, 180, 255, 0.1),
+    transparent
+  );
+  border: 1px dashed rgba(100, 180, 255, 0.4);
+  color: #64b4ff;
+  text-align: center;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.05em;
+  transition: all 0.3s;
+  box-sizing: border-box;
+}
+.portrait-custom-btn:hover {
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(100, 180, 255, 0.2),
+    transparent
+  );
+  box-shadow: 0 0 8px rgba(100, 180, 255, 0.3);
+}
+.portrait-pool-selector {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  z-index: 20;
+}
+.portrait-pool-toggle {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 0 3px;
+  border: 1px dashed rgba(255, 215, 0, 0.5);
+  border-radius: 4px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 215, 0, 0.12),
+    transparent
+  );
+  color: var(--accent-gold);
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.portrait-pool-toggle:hover,
+.portrait-pool-toggle:focus-visible,
+.portrait-pool-selector.is-open .portrait-pool-toggle {
+  outline: none;
+  background: rgba(255, 215, 0, 0.16);
+  box-shadow: 0 0 9px var(--accent-gold-glow);
+}
+.portrait-pool-toggle-label {
+  display: none;
+}
+.portrait-pool-arrow {
+  font-size: 0.7em;
+  transition: transform 0.2s ease;
+}
+.portrait-pool-selector.is-open .portrait-pool-arrow {
+  transform: rotate(180deg);
+}
+.portrait-pool-icon-image {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+.portrait-pool-icon-text {
+  line-height: 1;
+  white-space: nowrap;
+}
+.portrait-pool-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 112px;
+  max-width: min(210px, 70vw);
+  max-height: 220px;
+  padding: 6px;
+  gap: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 215, 0, 0.42);
+  border-radius: 8px;
+  background: linear-gradient(
+    145deg,
+    rgba(26, 23, 31, 0.98),
+    rgba(12, 10, 16, 0.99)
+  );
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-5px) scale(0.98);
+  transform-origin: top right;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0.18s ease;
+  pointer-events: none;
+  z-index: 1000;
+}
+.portrait-pool-selector.is-open .portrait-pool-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.portrait-pool-selector.opens-up .portrait-pool-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform: translateY(5px) scale(0.98);
+  transform-origin: bottom right;
+}
+.portrait-pool-selector.opens-up.is-open .portrait-pool-menu {
+  transform: translateY(0) scale(1);
+}
+.portrait-pool-option {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 9px;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.portrait-pool-option:hover,
+.portrait-pool-option:focus-visible {
+  outline: none;
+  border-color: rgba(255, 215, 0, 0.25);
+  background: rgba(255, 215, 0, 0.08);
+}
+.portrait-pool-option.is-active {
+  border-color: rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.14);
+  color: var(--accent-gold);
+}
+.info-card.portrait-pool-open,
+.partner-card.portrait-pool-open,
+.npc-card.portrait-pool-open {
+  overflow: visible;
+  z-index: 25;
+}
+.card-collapse-body.portrait-pool-body-open {
+  overflow: visible;
+}
+@media (max-width: 600px) {
+  .portrait-pool-menu {
+    min-width: 124px;
+    max-height: min(210px, 44vh);
+  }
+  .portrait-pool-option {
+    min-height: 38px;
+  }
+}
+.portrait-applause {
+  display: inline-grid;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+.portrait-applause::part(surface) {
+  align-items: center;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 105, 180, 0.14),
+    transparent
+  );
+  border: 1px dashed rgba(255, 105, 180, 0.55);
+  border-radius: 4px;
+  color: #ff9ccc;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  box-sizing: border-box;
+  inline-size: 100%;
+  justify-content: center;
+  min-block-size: 100%;
+  padding: 0;
+}
+.portrait-applause:focus-within {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+.portrait-applause[data-busy],
+.portrait-applause[data-runtime-blocked] {
+  cursor: wait;
+  opacity: 0.72;
+}
+.portrait-applause[disabled],
+.portrait-applause[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.portrait-file-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(100, 180, 255, 0.2),
+    rgba(100, 180, 255, 0.1)
+  );
+  border: 1px dashed rgba(100, 180, 255, 0.5);
+  border-radius: 6px;
+  color: #64b4ff;
+  cursor: pointer;
+  font-size: 0.85em;
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+.portrait-file-label:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(100, 180, 255, 0.3),
+    rgba(100, 180, 255, 0.15)
+  );
+}
+.portrait-custom-modal,
+.api-config-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+}
+.portrait-custom-modal.show,
+.api-config-modal.show {
+  display: flex;
+}
+.portrait-custom-dialog,
+.api-config-dialog {
+  background: linear-gradient(
+    145deg,
+    rgba(20, 25, 35, 0.95),
+    rgba(10, 15, 25, 0.98)
+  );
+  border: 1px solid rgba(100, 180, 255, 0.4);
+  border-radius: 12px;
+  padding: 25px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 0 30px rgba(100, 180, 255, 0.3);
+}
+.portrait-custom-dialog h3,
+.api-config-dialog h3 {
+  color: #64b4ff;
+  margin: 0 0 15px 0;
+  text-align: center;
+  font-size: 1.1em;
+  letter-spacing: 2px;
+}
+.portrait-custom-dialog label,
+.api-config-dialog label {
+  color: #a0b8cc;
+  font-size: 0.9em;
+  display: block;
+  margin-bottom: 5px;
+}
+.portrait-custom-dialog input,
+.api-config-dialog input,
+.api-config-dialog select,
+.api-config-dialog textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(100, 180, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #e0f0ff;
+  font-size: 0.9em;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.portrait-custom-dialog input:focus,
+.api-config-dialog input:focus,
+.api-config-dialog select:focus,
+.api-config-dialog textarea:focus {
+  outline: none;
+  border-color: #64b4ff;
+  box-shadow: 0 0 10px rgba(100, 180, 255, 0.2);
+}
+.portrait-custom-dialog .btn-row,
+.api-config-dialog .btn-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 5px;
+}
+.portrait-custom-dialog .btn-confirm,
+.api-config-dialog .btn-confirm {
+  background: linear-gradient(135deg, #1a5fa8, #2a7fd8);
+  color: #fff;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  letter-spacing: 1px;
+  transition: all 0.3s;
+}
+.portrait-custom-dialog .btn-confirm:hover,
+.api-config-dialog .btn-confirm:hover {
+  background: linear-gradient(135deg, #2a7fd8, #3a8fe8);
+  box-shadow: 0 0 12px rgba(100, 180, 255, 0.4);
+}
+.portrait-custom-dialog .btn-cancel,
+.api-config-dialog .btn-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: #a0b8cc;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.3s;
+}
+.portrait-custom-dialog .btn-cancel:hover,
+.api-config-dialog .btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.portrait-custom-dialog .btn-reset {
+  background: rgba(255, 80, 80, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 80, 80, 0.3);
+  padding: 8px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.3s;
+}
+.portrait-custom-dialog .btn-reset:hover {
+  background: rgba(255, 80, 80, 0.25);
+}
+.portrait-preview {
+  width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 10px;
+  display: none;
+}
+.portrait-preview.show {
+  display: block;
+}
+.portrait-preview-wrapper.dy-preview-visible {
+  display: flex;
+}
+.portrait-custom-hint {
+  font-size: 0.75em;
+  color: #6a8a9a;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.beauty-forum-card .portrait-actions {
+  display: grid;
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.beauty-forum-card .beauty-forum-primary-actions,
+.beauty-forum-card .beauty-forum-secondary-actions,
+.beauty-forum-card .beauty-forum-drawer-slot {
+  min-width: 0;
+}
+
+.beauty-forum-card .portrait-pool-selector {
+  width: 100%;
+  min-width: 0;
+}
+
+.beauty-forum-card .portrait-pool-toggle {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.beauty-forum-card .portrait-toggle-btn {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.beauty-forum-card .portrait-custom-btn,
+.beauty-forum-card .portrait-applause {
+  width: 100%;
+  height: 36px;
+  aspect-ratio: auto;
+}
+
+.beauty-forum-card .portrait-actions .forum-thread-toggle {
+  grid-column: auto;
+  width: 100%;
+  min-height: 36px;
+}
+
+@media (min-width: 701px) {
+  .beauty-forum-card .portrait-actions {
+    grid-template-columns:
+      minmax(108px, 1fr)
+      repeat(3, 36px)
+      minmax(78px, 1fr)
+      minmax(78px, 1fr);
+  }
+
+  .beauty-forum-card .beauty-forum-primary-actions,
+  .beauty-forum-card .beauty-forum-secondary-actions {
+    display: contents;
+  }
+}
+
+@media (max-width: 700px) {
+  .beauty-forum-card .portrait-actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .beauty-forum-card .beauty-forum-primary-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(3, 36px);
+    gap: 4px;
+  }
+
+  .beauty-forum-card .beauty-forum-secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .beauty-forum-card .portrait-toggle-btn {
+    padding: 6px 8px;
+  }
+}
+
+/* Final theme cascade for the Vue portrait editor. */
+.portrait-custom-modal .portrait-custom-dialog {
+  position: relative;
+  width: min(90%, 540px);
+  max-width: 540px;
+  max-height: 88vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--border-metal);
+  border-top: 2px solid var(--accent-gold);
+  border-bottom: 2px solid var(--accent-gold);
+  background: linear-gradient(145deg, rgba(25, 20, 30, 0.98), rgba(15, 10, 15, 0.99));
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.9), inset 0 0 20px rgba(255, 215, 0, 0.05);
+  color: var(--text-main);
+  box-sizing: border-box;
+}
+.portrait-custom-modal .portrait-custom-dialog h3 {
+  margin: 0 0 16px;
+  padding: 0 78px 12px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+  color: var(--accent-gold);
+  text-shadow: 0 0 8px var(--accent-gold-glow);
+}
+.portrait-custom-modal .portrait-custom-dialog label { color: var(--text-dim); }
+.portrait-custom-modal .portrait-custom-dialog .portrait-file-label {
+  margin: 0;
+  border-color: var(--accent-gold);
+  background: rgba(255, 215, 0, 0.06);
+  color: var(--accent-gold);
+}
+.portrait-custom-modal .portrait-custom-dialog input {
+  margin: 0;
+  border-color: rgba(255, 215, 0, 0.32);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--text-main);
+}
+.portrait-custom-modal .portrait-custom-dialog input:focus {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 9px var(--accent-gold-glow);
+}
+.portrait-custom-modal .portrait-custom-dialog .btn-confirm {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: linear-gradient(135deg, #b8860b, #ffd700);
+  color: #1a0f0f;
+  font-weight: 700;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6);
+}
+.portrait-custom-modal .portrait-custom-dialog .btn-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+}
+.portrait-custom-modal .portrait-custom-dialog .btn-reset {
+  border: 1px solid rgba(255, 77, 77, 0.35);
+  background: rgba(255, 77, 77, 0.12);
+  color: var(--accent-blood);
+}
+.jiuqi-story-scroll p { margin: 0 0 15px; text-align: justify; }
+.jiuqi-story-scroll em { font-style: normal; font-weight: 700; }
+.jiuqi-story-scroll .jiuqi-name { font-size: 1.3em; letter-spacing: 1px; text-shadow: 0 0 8px rgba(217, 128, 250, 0.6); }
+.jiuqi-story-scroll .jiuqi-dim { color: var(--text-dim); }
+.jiuqi-story-scroll .jiuqi-mana { color: var(--accent-mana); }
+.jiuqi-story-scroll .jiuqi-danger { color: var(--accent-blood); font-size: 1.15em; text-shadow: 0 0 5px var(--accent-blood-glow); }
+.jiuqi-story-scroll .jiuqi-gold { color: var(--accent-gold); text-shadow: 0 0 5px var(--accent-gold-glow); }
+.jiuqi-story-scroll .jiuqi-exp { color: var(--accent-exp); font-size: 1.15em; }
+
+/* Keep scroll behavior without exposing native desktop scrollbars in themed dialogs. */
+.portrait-custom-modal,
+.portrait-custom-dialog,
+.jiuqi-story-scroll,
+.jiuqi-edit-fields,
+.dy-notice-content,
+.dy-status-dialog-message {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.portrait-custom-dialog::-webkit-scrollbar,
+.jiuqi-story-scroll::-webkit-scrollbar,
+.jiuqi-edit-fields::-webkit-scrollbar,
+.dy-notice-content::-webkit-scrollbar,
+.dy-status-dialog-message::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.portrait-custom-modal {
+  overflow: hidden;
+}
+
+@media (max-width: 600px) {
+  .portrait-custom-modal .portrait-custom-dialog { width: 100%; padding: 18px 14px; }
+  .portrait-custom-modal .portrait-custom-dialog h3 { padding-inline: 62px; }
+}

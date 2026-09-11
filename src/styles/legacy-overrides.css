@@ -1,0 +1,8 @@
+body.dy-global-collapsed #expression-wrapper,
+body.dy-global-collapsed .waifu,
+body.dy-global-collapsed #waifu,
+body.dy-global-collapsed #char-sprite,
+body.dy-global-collapsed .qiling,
+body.dy-global-collapsed #SillyTavern-Mascot {
+  display: none !important;
+}

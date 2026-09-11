@@ -8,6 +8,62 @@ const projectRoot = path.resolve(
   "..",
 );
 const outputPath = path.join(projectRoot, "dist/daoyuan-floating-mvu.json");
+const buildSourcePath = path.join(projectRoot, "scripts/build-floating-mvu.js");
+const sourceOnly = process.argv.includes("--source-only");
+const buildTarget = process.env.BUILD_TARGET || "floating";
+
+function validateFloatingSources() {
+  const sourcePaths = [
+    buildSourcePath,
+    path.join(projectRoot, "vite.config.ts"),
+    path.join(projectRoot, "vite.iframe.config.ts"),
+    path.join(projectRoot, "tavern/vite.config.ts"),
+    path.join(projectRoot, "src/compatibility-runtime.ts"),
+    path.join(projectRoot, "src/bridge/event-bus.ts"),
+    path.join(projectRoot, "src/bridge/tavern-api.ts"),
+  ];
+  const source = sourcePaths
+    .map(sourcePath => fs.readFileSync(sourcePath, "utf8"))
+    .join("\n");
+  const buildSource = fs.readFileSync(buildSourcePath, "utf8");
+  const forbiddenDependencies = [
+    [/(?:window|bridge\.api)\.\$/, "jQuery dollar bridge"],
+    [/window\.jQuery|code\.jquery|jquery-\d/i, "jQuery global or CDN"],
+    [/(?:window|bridge\.api)\._\s*=/, "Lodash bridge"],
+    [/(^|[^\\])\$\(/m, "jQuery call"],
+    [/_\.(?:get|unset)\s*\(/, "Lodash call"],
+  ].filter(([pattern]) => pattern.test(source));
+  if (forbiddenDependencies.length > 0) {
+    throw new Error(
+      `Floating sources still contain implicit dependencies: ${forbiddenDependencies.map(([, label]) => label).join(", ")}`,
+    );
+  }
+  const requiredBridgeMarkers = [
+    "getCurrentMessageId",
+    "stopGenerationById",
+    "STREAM_TOKEN_RECEIVED_FULLY",
+    "iframeEvents",
+    "__daoyuanFloatingTeardown",
+    "Function.prototype.bind.call",
+  ].filter(marker => !source.includes(marker));
+  if (requiredBridgeMarkers.length > 0) {
+    throw new Error(`Floating sources are missing bridge markers: ${requiredBridgeMarkers.join(", ")}`);
+  }
+  const bootstrapMatch = buildSource.match(
+    /const bootstrapSource = String\.raw`([\s\S]*?)`;\s*\n\s*function injectBootstrap/,
+  );
+  if (!bootstrapMatch) {
+    throw new Error("Floating child bootstrap source could not be located");
+  }
+  new vm.Script(bootstrapMatch[1], { filename: "floating-child-bootstrap.js" });
+}
+
+console.log(`[道渊构建] target=${buildTarget} step=${sourceOnly ? "bridge-source-validate" : "artifact-validate"}`);
+validateFloatingSources();
+if (sourceOnly) {
+  console.log(`[道渊构建] target=${buildTarget} floating bridge sources validated`);
+  process.exit(0);
+}
 
 if (!fs.existsSync(outputPath)) {
   throw new Error(`Floating MVU output not found at ${outputPath}`);
@@ -52,6 +108,11 @@ const requiredMarkers = [
   "daoyuan-floating-mvu-panel-drag",
   "daoyuan-floating-mvu-resize-",
   "daoyuan-floating-mvu-pet-style",
+  "html,body,#app",
+  "#app{display:flex!important;}",
+  "flex:1 1 auto!important",
+  "overscroll-behavior:contain!important",
+  "touch-action:pan-y!important",
   "resizeHandleSettings",
   "daoyuan-floating-mvu-layout-v4",
   "daoyuan-floating-mvu-layout-v3",
@@ -89,18 +150,21 @@ const requiredMarkers = [
   "#d8f5ff",
   "(pointer: coarse)",
   "waitGlobalInitialized",
+  "getCurrentMessageId",
   "getMvuData",
   "replaceMvuData",
   "daoyuan_mvu_manual_updated",
   "eventEmit",
+  "stopGenerationById",
+  "STREAM_TOKEN_RECEIVED_FULLY",
+  "iframeEvents",
+  "__daoyuanFloatingTeardown",
   "getPersonaAvatarPath",
   "getButtonEvent",
   "VARIABLE_UPDATE_ENDED",
   "__daoyuanFloatingBridge",
   "images.json",
-  "portrait-drawers.json",
   "daoyuan_images_cache_v2",
-  "daoyuan_portrait_drawers_cache_v1",
   "daoyuan_portrait_preferences_v2",
   "daoyuan_portrait_preferences_migration_version",
   "daoyuan_status_assets",
@@ -111,14 +175,14 @@ const requiredMarkers = [
   "switchPortraitInPool",
   "Nai",
   "🥛",
-  "urls.length === 0",
   "dyImageCacheMissing",
   "dyPortraitCacheMissing",
-  "getSectMapImages",
+  "safeImageUrl",
+  "getSectMapUrl",
+  "setCustomImages",
   "DaoyuanStatusStorage",
   "sharedStatusStorage",
   "portraitRevision",
-  "replaceChildren",
 ];
 const missingMarkers = requiredMarkers.filter(
   marker => !scriptContent.includes(marker),
@@ -126,6 +190,7 @@ const missingMarkers = requiredMarkers.filter(
 
 const forbiddenLegacyImageFiles = [
   "portraits.json",
+  "portrait-drawers.json",
   "sect-maps.json",
 ].filter(marker => scriptContent.includes(marker));
 
@@ -151,8 +216,16 @@ if (
   );
 }
 
-if (scriptContent.includes("DaoyuanStatusDb")) {
+if (scriptContent.includes("installDaoyuanStatusStorage")) {
   throw new Error("Floating MVU output unexpectedly contains Shujuku adapter code");
+}
+
+if (/window\._\s*=|bridge\.api\._/.test(scriptContent)) {
+  throw new Error("Floating MVU output unexpectedly reintroduces Lodash");
+}
+
+if (/window\.\$|window\.jQuery|bridge\.api\.\$|酒馆助手未提供 jQuery/.test(scriptContent)) {
+  throw new Error("Floating MVU output unexpectedly reintroduces jQuery");
 }
 
 const embeddedPetImages = [
@@ -189,5 +262,5 @@ if (/<\/script/i.test(scriptContent)) {
 new vm.Script(scriptContent, { filename: "daoyuan-floating-mvu.content.js" });
 
 console.log(
-  "Validated Tavern Helper JSON schema, seven embedded pet states, floating MVU markers, and JavaScript syntax",
+  `[道渊构建] target=${buildTarget} validated Tavern Helper schema, bridge, teardown, pet states, and JavaScript syntax`,
 );

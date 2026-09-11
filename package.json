@@ -2,31 +2,37 @@
   "name": "status-placeholder",
   "version": "1.0.0",
   "description": "Vite development environment for MVU Status Bar",
-  "main": "src/main.js",
+  "main": "src/main.ts",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:tavern": "vite --config tavern/vite.config.js",
-    "dev:iframe": "vite --config vite.iframe.config.js",
+    "dev:tavern": "vite --config tavern/vite.config.ts",
+    "dev:iframe": "vite --config vite.iframe.config.ts",
     "build": "pnpm run build:mvu",
     "build:mvu": "cross-env BUILD_TARGET=mvu vite build && cross-env BUILD_TARGET=mvu node scripts/build-post.js && cross-env BUILD_TARGET=mvu node scripts/validate-build.js",
     "build:shujuku": "cross-env BUILD_TARGET=shujuku vite build && cross-env BUILD_TARGET=shujuku node scripts/build-post.js && cross-env BUILD_TARGET=shujuku node scripts/validate-build.js",
-    "build:floating-mvu": "cross-env BUILD_TARGET=mvu vite build && node scripts/build-floating-mvu.js && node scripts/validate-floating-mvu.js",
+    "build:floating-mvu": "cross-env BUILD_TARGET=floating vite build && cross-env BUILD_TARGET=floating node scripts/build-floating-mvu.js && cross-env BUILD_TARGET=floating node scripts/validate-floating-mvu.js",
     "build:all": "pnpm run build:mvu && pnpm run build:shujuku && pnpm run build:floating-mvu",
+    "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json",
+    "validate:adapters": "cross-env BUILD_TARGET=shujuku node scripts/validate-build.js --source-only && cross-env BUILD_TARGET=floating node scripts/validate-floating-mvu.js --source-only",
     "validate:images": "node scripts/validate-images-system.js",
     "extract": "node scripts/extract.js",
     "kill": "node scripts/kill-port.js"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "cross-env": "^10.1.0",
     "node-html-parser": "^9.0.0",
     "pretty": "^2.0.0",
     "stylelint-config-standard": "^40.0.0",
+    "typescript": "^5.9.3",
     "vite": "^5.2.0",
-    "vite-plugin-singlefile": "^2.0.1"
+    "vite-plugin-singlefile": "^2.0.1",
+    "vue-tsc": "^2.2.12"
   },
   "dependencies": {
+    "pinia": "^3.0.4",
     "vue": "^3.5.41"
   }
 }

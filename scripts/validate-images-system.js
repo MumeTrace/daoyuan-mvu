@@ -3,20 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseImageLibrary } from "../src/features/image-library/schema.js";
+import { parseImageLibrary } from "../src/features/image-library/schema.ts";
 import {
   getCharacterEntity,
   getSectMapImages,
   groupCharacterImagesByTheme,
-} from "../src/features/image-library/selectors.js";
-import { setImageLibrary } from "../src/features/image-library/store.js";
-import { canUsePortraitTheme } from "../src/features/portraits/rules.js";
-import { parsePortraitDrawers } from "../src/features/portraits/drawers.js";
-import {
-  getThemeUi,
-  resetThemeUiConfiguration,
-  setThemeUiConfiguration,
-} from "../src/features/portraits/theme-ui.js";
+} from "../src/features/image-library/selectors.ts";
+import { setImageLibrary } from "../src/features/image-library/store.ts";
+import { canUsePortraitTheme } from "../src/features/portraits/rules.ts";
+import { getThemeUi } from "../src/features/portraits/theme-ui.ts";
 
 class MemoryStorage {
   constructor(entries = {}) {
@@ -118,34 +113,6 @@ assert.equal(canUsePortraitTheme("nai", [{ url: "x" }], {}), true);
 assert.deepEqual(getThemeUi("nai"), { name: "Nai", icon: "🥛" });
 assert.deepEqual(getThemeUi("swimsuit"), { name: "泳装", icon: "👙" });
 
-const drawerFixture = parsePortraitDrawers({
-  schemaVersion: 1,
-  pools: {
-    normal: { name: "常服", icon: "🌿", order: 10 },
-    Tarot: { name: "秘仪", icon: "🃏", order: 20 },
-    festival: { name: "庆典", icon: "🎉", order: 30 },
-  },
-  aliases: { celebration: "festival" },
-});
-setThemeUiConfiguration(drawerFixture);
-assert.deepEqual(getThemeUi("default"), {
-  name: "常服",
-  icon: "🌿",
-  order: 10,
-});
-assert.deepEqual(getThemeUi("tarot"), {
-  name: "秘仪",
-  icon: "🃏",
-  order: 20,
-});
-assert.deepEqual(getThemeUi("festival"), {
-  name: "庆典",
-  icon: "🎉",
-  order: 30,
-});
-assert.deepEqual(getThemeUi("celebration"), getThemeUi("festival"));
-resetThemeUiConfiguration();
-
 globalThis.window = {
   localStorage: new MemoryStorage({
     daoyuan_active_portrait_pools: JSON.stringify({ 测试人物: "normal" }),
@@ -157,10 +124,10 @@ globalThis.window = {
 };
 
 const { migrateLegacyPortraitPreferences } = await import(
-  "../src/features/portraits/migration.js"
+  "../src/features/portraits/migration.ts"
 );
 const { readPortraitPreferences } = await import(
-  "../src/features/portraits/preferences.js"
+  "../src/features/portraits/preferences.ts"
 );
 
 assert.equal(await migrateLegacyPortraitPreferences(), true);
@@ -229,11 +196,12 @@ const projectRoot = path.resolve(
   "..",
 );
 const runtimeFiles = [
-  path.join(projectRoot, "src/components/portraits.js"),
-  path.join(projectRoot, "src/components/maps.js"),
-  path.join(projectRoot, "src/components/init.js"),
-  path.join(projectRoot, "src/features/image-library/constants.js"),
-  path.join(projectRoot, "src/features/portraits/drawers.js"),
+  path.join(projectRoot, "src/stores/portraits.ts"),
+  path.join(projectRoot, "src/stores/image-library.ts"),
+  path.join(projectRoot, "src/stores/notice.ts"),
+  path.join(projectRoot, "src/features/image-library/constants.ts"),
+  path.join(projectRoot, "src/features/portraits/local-images.ts"),
+  path.join(projectRoot, "src/features/portraits/migration.ts"),
 ];
 const runtimeSource = runtimeFiles
   .map((file) => fs.readFileSync(file, "utf8"))
@@ -241,20 +209,16 @@ const runtimeSource = runtimeFiles
 const portraitsSource = fs.readFileSync(runtimeFiles[0], "utf8");
 for (const legacyFile of [
   "portraits.json",
+  "portrait-drawers.json",
   "sect-maps.json",
 ]) {
   assert.equal(runtimeSource.includes(legacyFile), false, legacyFile);
 }
 assert.equal(runtimeSource.includes("images.json"), true);
-assert.equal(runtimeSource.includes("portrait-drawers.json"), true);
-assert.equal(runtimeSource.includes("daoyuan_portrait_drawers_cache_v1"), true);
 assert.equal(runtimeSource.includes("notice.json"), true);
 assert.equal(portraitsSource.includes("...Object.keys(THEME_UI)"), false);
-assert.equal(
-  portraitsSource.includes("if (!value || urls.length === 0)"),
-  true,
-);
+assert.equal(portraitsSource.includes("persistPortraitImageUrls"), true);
 
 console.log(
-  "IMAGES_SYSTEM_OK schema, entity routing, remote drawer metadata, theme order, drawer visibility, Nai UI, special rule, quota recovery, and safe local migration",
+  "IMAGES_SYSTEM_OK schema, entity routing, theme order, drawer visibility, Nai UI, special rule, quota recovery, and safe local migration",
 );
