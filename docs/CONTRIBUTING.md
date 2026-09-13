@@ -40,7 +40,7 @@ pnpm install
 
 共享 UI、桥接、存储、图片、弹窗或样式发生变化时，必须运行 `pnpm build:all`。不要因为一个版本可以打开，就断定另外两个版本兼容。
 
-`dist/index.html` 是构建中间文件。所有生成文件都必须由脚本产生，不允许直接手工修改 `replaceString` 或悬浮 JSON 中的内联代码。
+`dist/index.html` 是构建期间的中间文件，在产物校验成功后会自动清理。`dist/` 最终只允许保留三个正式 JSON；所有生成文件都必须由脚本产生，不允许直接手工修改 `replaceString` 或悬浮 JSON 中的内联代码。
 
 ## 4. 模块边界
 

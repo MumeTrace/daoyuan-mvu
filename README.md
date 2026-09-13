@@ -22,7 +22,7 @@
 | `dist/regex-shujuku.json` | `pnpm build:shujuku` | Shujuku 数据库状态栏 | Tavern Helper、`AutoCardUpdaterAPI` |
 | `dist/daoyuan-floating-mvu.json` | `pnpm build:floating-mvu` | 可拖动、缩放的悬浮状态栏 | Tavern Helper、MVU |
 
-三个版本共享界面，但数据入口、存储、生命周期和清理方式不同，不能相互替代。`dist/index.html`只是构建中间文件，最终交付物是上面的三个 JSON。
+三个版本共享界面，但数据入口、存储、生命周期和清理方式不同，不能相互替代。构建时会临时生成 `dist/index.html` 供后处理和校验使用，校验成功后自动删除；`dist/` 最终只保留上面的三个 JSON。
 
 ### 导入
 
@@ -69,7 +69,7 @@ pnpm build:all
 - `typecheck`检查 Vue、浏览器源码和 Node 构建配置的 TypeScript 类型。
 - `validate:adapters`检查 Shujuku 与悬浮桥的源码契约。
 - `validate:images`检查图片 Schema、主题规则、缓存和偏好迁移。
-- `build:all`生成并验证三个 JSON，包括正则多轮替换安全、内联脚本语法、桥接白名单和 teardown 标记。
+- `build:all`生成并验证三个 JSON，包括正则多轮替换安全、内联脚本语法、桥接白名单和 teardown 标记；每个目标校验成功后会自动清理 `dist/` 中的中间文件与非交付文件。
 
 不要直接编辑 `dist/`。MVU 与 Shujuku 的 HTML 会写入正则 `replaceString`，其中的 `$1`、`$2`等字符可能被酒馆再次解释；悬浮版还会把页面、宿主桥和宠物资源序列化进脚本 JSON。这些步骤必须由构建脚本完成。
 
@@ -241,7 +241,7 @@ tavern/                       本地聊天页模拟环境
 
 ### 构建后修改没有生效
 
-重新构建并重新导入对应 JSON，不要只导入或修改 `dist/index.html`。
+重新构建并重新导入对应 JSON。`dist/index.html` 只是构建期间的临时文件，成功构建后不会保留。
 
 ## 相关文档
 
