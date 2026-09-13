@@ -109,6 +109,8 @@ const requiredMarkers = [
   "daoyuan-floating-mvu-resize-",
   "daoyuan-floating-mvu-pet-style",
   "html,body,#app",
+  "width=device-width",
+  "viewport-fit=cover",
   "#app{display:flex!important;}",
   "flex:1 1 auto!important",
   "overscroll-behavior:contain!important",

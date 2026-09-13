@@ -257,6 +257,10 @@ if (
   );
 }
 
+if (!/<meta\s+name=["']viewport["'][^>]*content=["'][^"']*width=device-width/i.test(renderedHtml)) {
+  throw new Error("Regex-rendered HTML is missing its mobile viewport contract");
+}
+
 const exposedReplacementToken = regexConfig.replaceString.match(
   /\$(?:\$|\d|[&`'<])/,
 );
