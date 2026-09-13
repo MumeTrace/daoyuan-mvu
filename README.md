@@ -337,7 +337,7 @@ Shujuku 版不会复用 MVU 的整对象写回。它会把路径解析为已声�
 
 运行时可能访问：
 
-- 道渊仓库的 `images.json` 与 `notice.json`；
+- 道渊仓库的 `images.json`、`portrait-drawers.json` 与 `notice.json`；
 - 道渊 Wiki 和 `daoyuan-applause` CDN；
 - 舆图、角色立绘和玖柒图片地址；
 - 用户在绝色榜或玉简设置中填写的自定义 API。
@@ -373,6 +373,7 @@ Shujuku 版不会复用 MVU 的整对象写回。它会把路径解析为已声�
 - 图片只接受 `http:`、`https:` 或受支持的 `data:image/` 地址。
 - 每张图片必须具有非空 `theme`；不支持的实体类型或 Schema 会拒绝整份远程数据。
 - 成功解析的数据写入 `daoyuan_images_cache_v2`，后续优先从缓存启动。
+- 抽屉名称、图标、顺序和别名由远程 `portrait-drawers.json` 决定，并缓存到 `daoyuan_portrait_drawers_cache_v1`；例如 `qipao` 应直接使用远程提供的“旗袍”和 `🏮`，不能在组件中另行猜测或覆盖。
 - 用户选择的角色主题、索引和自定义图片引用写入 `daoyuan_portrait_preferences_v2`。
 - 本地上传的 base64 图片本体写入 IndexedDB 数据库 `daoyuan_status_assets` 的 `portrait_images` 对象仓库。
 - 偏好数据仅保存 `idb:daoyuan-portrait:` 引用，避免大图片占满 localStorage。
@@ -402,6 +403,7 @@ Shujuku 版不会复用 MVU 的整对象写回。它会把路径解析为已声�
 | `daoyuan_btns_collapsed` | 顶部按钮区折叠状态 |
 | `jiuqi_story_seen_<主角名>` | 当前主角是否已看过玖柒首次提示 |
 | `daoyuan_images_cache_v2` | 校验后的远程图片库缓存 |
+| `daoyuan_portrait_drawers_cache_v1` | 远程立绘抽屉名称、图标、顺序和别名缓存 |
 | `daoyuan_portrait_preferences_v2` | 角色立绘主题、索引和图片引用，不保存 IndexedDB 中的图片本体 |
 | `daoyuan_portrait_preferences_migration_version` | 旧立绘偏好迁移版本 |
 | `daoyuan_notice_read_version` | 已读版本公告 |
@@ -480,7 +482,7 @@ vite.mock-plugin.ts           开发 mock 注入插件
 | `src/bridge/storage-runtime.ts` | 在 Shujuku 存储与浏览器存储之间选择可用实现 |
 | `src/compatibility-runtime.ts` | 仅向宿主和旧调用者暴露必要兼容函数 |
 | `src/features/image-library/` | 图片请求、Schema 校验、缓存、状态和选择器 |
-| `src/features/portraits/` | 立绘主题规则、偏好与旧数据迁移 |
+| `src/features/portraits/` | 远程抽屉配置、立绘主题规则、偏好与旧数据迁移 |
 | `src/features/portraits/local-images.ts` | IndexedDB 本地立绘写入、引用解析和无用图片清理 |
 | `scripts/build-post.js` | 把单文件 HTML 写入 MVU/Shujuku 正则 JSON |
 | `scripts/build-floating-mvu.js` | 生成悬浮窗宿主脚本、子 iframe 桥和宠物资源 |

@@ -11,7 +11,12 @@ import {
 } from "../src/features/image-library/selectors.ts";
 import { setImageLibrary } from "../src/features/image-library/store.ts";
 import { canUsePortraitTheme } from "../src/features/portraits/rules.ts";
-import { getThemeUi } from "../src/features/portraits/theme-ui.ts";
+import { parsePortraitDrawers } from "../src/features/portraits/drawers.ts";
+import {
+  getThemeUi,
+  resetThemeUiConfiguration,
+  setThemeUiConfiguration,
+} from "../src/features/portraits/theme-ui.ts";
 
 class MemoryStorage {
   constructor(entries = {}) {
@@ -113,6 +118,32 @@ assert.equal(canUsePortraitTheme("nai", [{ url: "x" }], {}), true);
 assert.deepEqual(getThemeUi("nai"), { name: "Nai", icon: "🥛" });
 assert.deepEqual(getThemeUi("swimsuit"), { name: "泳装", icon: "👙" });
 
+const drawerFixture = parsePortraitDrawers({
+  schemaVersion: 1,
+  pools: {
+    normal: { name: "普通远程名", icon: "远", order: 10 },
+    qipao: { name: "旗袍", icon: "🏮", order: 90 },
+  },
+  aliases: { cheongsam: "qipao" },
+});
+setThemeUiConfiguration(drawerFixture);
+assert.deepEqual(getThemeUi("default"), {
+  name: "普通远程名",
+  icon: "远",
+  order: 10,
+});
+assert.deepEqual(getThemeUi("qipao"), {
+  name: "旗袍",
+  icon: "🏮",
+  order: 90,
+});
+assert.deepEqual(getThemeUi("cheongsam"), {
+  name: "旗袍",
+  icon: "🏮",
+  order: 90,
+});
+resetThemeUiConfiguration();
+
 globalThis.window = {
   localStorage: new MemoryStorage({
     daoyuan_active_portrait_pools: JSON.stringify({ 测试人物: "normal" }),
@@ -200,6 +231,7 @@ const runtimeFiles = [
   path.join(projectRoot, "src/stores/image-library.ts"),
   path.join(projectRoot, "src/stores/notice.ts"),
   path.join(projectRoot, "src/features/image-library/constants.ts"),
+  path.join(projectRoot, "src/features/portraits/drawers.ts"),
   path.join(projectRoot, "src/features/portraits/local-images.ts"),
   path.join(projectRoot, "src/features/portraits/migration.ts"),
 ];
@@ -209,16 +241,16 @@ const runtimeSource = runtimeFiles
 const portraitsSource = fs.readFileSync(runtimeFiles[0], "utf8");
 for (const legacyFile of [
   "portraits.json",
-  "portrait-drawers.json",
   "sect-maps.json",
 ]) {
   assert.equal(runtimeSource.includes(legacyFile), false, legacyFile);
 }
 assert.equal(runtimeSource.includes("images.json"), true);
+assert.equal(runtimeSource.includes("portrait-drawers.json"), true);
 assert.equal(runtimeSource.includes("notice.json"), true);
 assert.equal(portraitsSource.includes("...Object.keys(THEME_UI)"), false);
 assert.equal(portraitsSource.includes("persistPortraitImageUrls"), true);
 
 console.log(
-  "IMAGES_SYSTEM_OK schema, entity routing, theme order, drawer visibility, Nai UI, special rule, quota recovery, and safe local migration",
+  "IMAGES_SYSTEM_OK schema, entity routing, remote drawer UI, theme order, drawer visibility, special rule, quota recovery, and safe local migration",
 );

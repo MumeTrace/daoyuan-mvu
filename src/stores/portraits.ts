@@ -148,11 +148,25 @@ export const usePortraitStore = defineStore("portraits", () => {
     gender: unknown = "",
   ): PortraitPoolOption[] {
     const active = activeTheme(name, gender);
-    return visibleThemes(name).map((id) => ({
-      id,
-      ...getThemeUi(id),
-      active: id === active,
-    }));
+    return visibleThemes(name)
+      .map((id, index) => ({ id, index, ui: getThemeUi(id) }))
+      .sort((left, right) => {
+        const leftOrder = typeof left.ui.order === "number"
+          && Number.isFinite(left.ui.order)
+          ? left.ui.order
+          : Number.MAX_SAFE_INTEGER;
+        const rightOrder = typeof right.ui.order === "number"
+          && Number.isFinite(right.ui.order)
+          ? right.ui.order
+          : Number.MAX_SAFE_INTEGER;
+        return leftOrder - rightOrder || left.index - right.index;
+      })
+      .map(({ id, ui }) => ({
+        id,
+        name: ui.name,
+        icon: ui.icon,
+        active: id === active,
+      }));
   }
 
   function setActiveTheme(name: string, theme: string): boolean {

@@ -7,6 +7,10 @@ import {
   initializeImageLibrary,
   refreshImageLibrary,
 } from "../features/image-library";
+import {
+  initializePortraitDrawers,
+  refreshPortraitDrawers,
+} from "../features/portraits/drawers";
 
 export const useImageLibraryStore = defineStore("image-library", () => {
   const schemaVersion = ref<string | number | null>(null);
@@ -14,6 +18,7 @@ export const useImageLibraryStore = defineStore("image-library", () => {
   const loaded = ref(false);
   const source = ref<string | null>(null);
   const error = ref<string | null>(null);
+  const drawersLoaded = ref(false);
   let initializePromise: Promise<boolean> | null = null;
   let initializationAllowsFetch = false;
 
@@ -61,8 +66,8 @@ export const useImageLibraryStore = defineStore("image-library", () => {
   }
 
   function initialize(options: { autoFetch?: boolean } = {}): Promise<boolean> {
-    if (loaded.value) return Promise.resolve(true);
     const allowsFetch = options.autoFetch !== false;
+    if (loaded.value && drawersLoaded.value) return Promise.resolve(true);
     if (initializePromise) {
       if (allowsFetch && !initializationAllowsFetch) {
         return initializePromise.then(
@@ -73,7 +78,11 @@ export const useImageLibraryStore = defineStore("image-library", () => {
     }
     initializationAllowsFetch = allowsFetch;
     initializePromise = (async () => {
-      const initialized = await initializeImageLibrary(options);
+      const [initialized, initializedDrawers] = await Promise.all([
+        initializeImageLibrary(options),
+        initializePortraitDrawers(options),
+      ]);
+      drawersLoaded.value = initializedDrawers;
       const synced = syncFromRuntime();
       if (!initialized || !synced) setError("图片库暂时不可用，可从公告中重新同步。");
       return initialized && synced;
@@ -86,7 +95,19 @@ export const useImageLibraryStore = defineStore("image-library", () => {
 
   async function refresh(): Promise<boolean> {
     try {
-      await refreshImageLibrary();
+      const [imagesResult, drawersResult] = await Promise.allSettled([
+        refreshImageLibrary(),
+        refreshPortraitDrawers(),
+      ]);
+      if (imagesResult.status === "rejected") throw imagesResult.reason;
+      if (drawersResult.status === "rejected") {
+        console.warn(
+          "[道渊状态栏] 图片已同步，但立绘抽屉配置同步失败，继续使用已有配置:",
+          drawersResult.reason,
+        );
+      } else {
+        drawersLoaded.value = true;
+      }
       const synced = syncFromRuntime();
       if (!synced) publishCacheState(true);
       return synced;
