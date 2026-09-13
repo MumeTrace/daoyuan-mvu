@@ -219,6 +219,9 @@ body{margin:0!important;padding:0!important;}
   .terminal-container>.content-grid>.main-panel{min-height:auto!important;overflow:visible!important;}
   .terminal-container>.content-grid>.main-panel>.tab-content{flex:none!important;max-height:none!important;overflow:visible!important;}
 }
+@media (pointer:coarse), (max-width:700px){
+  .terminal-container,.dy-status-dialog-overlay,.dy-notice-overlay,.jiuqi-overlay,.dy-portrait-search-overlay,.dy-jade-settings-overlay,.portrait-custom-modal,.dy-missing-portrait-overlay,.image-modal-overlay,.faction-modal-overlay,.luck-modal-overlay,.forum-settings-overlay,.portrait-reset-confirm{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}
+}
 *{scrollbar-width:thin;scrollbar-color:rgba(220,177,75,.58) rgba(5,6,9,.2);}
 *::-webkit-scrollbar{width:6px!important;height:6px!important;}
 *::-webkit-scrollbar-track{background:rgba(5,6,9,.2)!important;border-radius:999px!important;}
@@ -483,6 +486,10 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       typeof tavernWindow.matchMedia === "function" &&
       tavernWindow.matchMedia("(pointer: coarse)").matches
     );
+  }
+
+  function usesMobileSafeRendering() {
+    return isCoarsePointer() || getViewportSize().width <= 720;
   }
 
   function getLauncherDockTrigger() {
@@ -918,14 +925,21 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     if (!root || !launcher) return;
     clearTimeout(panelVisibilityTimer);
     clearTimeout(petTransitionTimer);
+    // Android Chrome can leave a fixed iframe in an intermediate composited
+    // opacity layer. Mobile-safe layouts therefore switch visibility
+    // synchronously while retaining the independent pet animation.
+    const mobileSafeRendering = usesMobileSafeRendering();
+    const animatePanel = shouldAnimate && !mobileSafeRendering;
     collapsed = nextCollapsed;
     if (collapsed) {
       root.style.pointerEvents = "none";
-      root.style.opacity = "0";
-      root.style.transform = "translateY(5px) scale(.975)";
+      root.style.opacity = animatePanel ? "0" : "1";
+      root.style.transform = animatePanel
+        ? "translateY(5px) scale(.975)"
+        : "none";
       panelVisibilityTimer = tavernWindow.setTimeout(() => {
         if (collapsed && root) root.style.visibility = "hidden";
-      }, shouldAnimate ? 220 : 0);
+      }, animatePanel ? 220 : 0);
       if (shouldAnimate) {
         if (petAnimationDelay > 0) {
           petTransitionTimer = tavernWindow.setTimeout(
@@ -940,15 +954,24 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       setPetUpdateNotice(false);
       root.style.visibility = "visible";
       root.style.pointerEvents = "auto";
-      if (shouldAnimate) {
+      if (animatePanel) {
         root.style.opacity = "0";
         root.style.transform = "translateY(5px) scale(.975)";
-        tavernWindow.requestAnimationFrame(() => {
+        const revealPanel = () => {
           if (!collapsed && root) {
             root.style.opacity = "1";
             root.style.transform = "translateY(0) scale(1)";
           }
-        });
+        };
+        tavernWindow.requestAnimationFrame(revealPanel);
+        panelVisibilityTimer = tavernWindow.setTimeout(revealPanel, 120);
+      } else {
+        root.style.opacity = "1";
+        root.style.transform = mobileSafeRendering
+          ? "none"
+          : "translateY(0) scale(1)";
+      }
+      if (shouldAnimate) {
         if (petAnimationDelay > 0) {
           petTransitionTimer = tavernWindow.setTimeout(
             () => setPetState("open", 740),
@@ -958,8 +981,6 @@ function floatingMvuRuntime(uiHtml, petAssets) {
           setPetState("open", 740);
         }
       } else {
-        root.style.opacity = "1";
-        root.style.transform = "translateY(0) scale(1)";
         setPetState("idle");
       }
     }
@@ -1006,9 +1027,9 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       "box-shadow:0 12px 34px rgba(0,0,0,.46),0 0 14px rgba(211,169,72,.055)",
       "pointer-events:auto",
       "opacity:1",
-      "transform:translateY(0) scale(1)",
+      `transform:${usesMobileSafeRendering() ? "none" : "translateY(0) scale(1)"}`,
       "transform-origin:center center",
-      "transition:opacity .22s ease,transform .22s ease",
+      `transition:${usesMobileSafeRendering() ? "none" : "opacity .22s ease,transform .22s ease"}`,
     ].join(";");
 
     const petStyle = tavernDocument.createElement("style");
