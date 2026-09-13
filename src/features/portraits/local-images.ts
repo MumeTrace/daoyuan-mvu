@@ -12,6 +12,32 @@ const resolvedImages = new Map<string, string>();
 let databasePromise: Promise<IDBDatabase> | null = null;
 let initializationPromise: Promise<boolean> | null = null;
 
+function getIndexedDbFactory(): IDBFactory | null {
+  const roots: Window[] = [];
+  try {
+    if (window.parent && window.parent !== window) roots.push(window.parent);
+  } catch {
+    // Cross-origin parents are intentionally ignored.
+  }
+  try {
+    if (window.top && window.top !== window && !roots.includes(window.top)) {
+      roots.push(window.top);
+    }
+  } catch {
+    // Cross-origin top windows are intentionally ignored.
+  }
+  roots.push(window);
+
+  for (const root of roots) {
+    try {
+      if (root.indexedDB) return root.indexedDB;
+    } catch {
+      // Continue to an accessible scope.
+    }
+  }
+  return null;
+}
+
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -33,11 +59,12 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 function openDatabase(): Promise<IDBDatabase> {
   if (databasePromise) return databasePromise;
   databasePromise = new Promise((resolve, reject) => {
-    if (!window.indexedDB) {
+    const indexedDb = getIndexedDbFactory();
+    if (!indexedDb) {
       reject(new Error("当前环境不支持 IndexedDB"));
       return;
     }
-    const request = window.indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    const request = indexedDb.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains(STORE_NAME)) {

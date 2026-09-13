@@ -9,15 +9,30 @@ export interface StatusDialogOptions {
   confirmText?: string;
   cancelText?: string;
   tone?: StatusDialogTone;
+  checkboxLabel?: string;
+  checkboxNote?: string;
+  checkboxDefault?: boolean;
 }
 
-export interface StatusDialogRequest extends Required<StatusDialogOptions> {
+export interface StatusDialogRequest {
   kind: StatusDialogKind;
   message: string;
   initialValue: string;
+  title: string;
+  confirmText: string;
+  cancelText: string;
+  tone: StatusDialogTone;
+  checkboxLabel: string;
+  checkboxNote: string;
+  checkboxDefault: boolean;
 }
 
-type DialogResult = boolean | string | null;
+export interface StatusDialogConfirmResult {
+  confirmed: boolean;
+  checked: boolean;
+}
+
+type DialogResult = boolean | string | null | StatusDialogConfirmResult;
 type PendingDialog = {
   request: StatusDialogRequest;
   resolve: (value: DialogResult) => void;
@@ -26,6 +41,7 @@ type PendingDialog = {
 export const useStatusDialogStore = defineStore("status-dialog", () => {
   const active = ref<StatusDialogRequest | null>(null);
   const inputValue = ref("");
+  const checkboxValue = ref(false);
   const queue: PendingDialog[] = [];
   let resolveActive: PendingDialog["resolve"] | null = null;
 
@@ -35,6 +51,7 @@ export const useStatusDialogStore = defineStore("status-dialog", () => {
     if (!next) return;
     active.value = next.request;
     inputValue.value = next.request.initialValue;
+    checkboxValue.value = next.request.checkboxDefault;
     resolveActive = next.resolve;
   }
 
@@ -59,6 +76,9 @@ export const useStatusDialogStore = defineStore("status-dialog", () => {
       confirmText: options.confirmText ?? (kind === "alert" ? "知道了" : "确认"),
       cancelText: options.cancelText ?? "取消",
       tone: options.tone ?? "default",
+      checkboxLabel: options.checkboxLabel ?? "",
+      checkboxNote: options.checkboxNote ?? "",
+      checkboxDefault: options.checkboxDefault ?? false,
     });
   }
 
@@ -68,6 +88,17 @@ export const useStatusDialogStore = defineStore("status-dialog", () => {
 
   async function confirm(message: string, options: StatusDialogOptions = {}): Promise<boolean> {
     return (await request("confirm", message, "", options)) === true;
+  }
+
+  async function confirmWithCheckbox(
+    message: string,
+    options: StatusDialogOptions & { checkboxLabel: string },
+  ): Promise<StatusDialogConfirmResult> {
+    const result = await request("confirm", message, "", options);
+    if (typeof result === "object" && result !== null && "confirmed" in result) {
+      return result;
+    }
+    return { confirmed: result === true, checked: false };
   }
 
   async function prompt(
@@ -89,13 +120,19 @@ export const useStatusDialogStore = defineStore("status-dialog", () => {
 
   function accept(): void {
     if (active.value?.kind === "prompt") settle(inputValue.value);
+    else if (active.value?.kind === "confirm" && active.value.checkboxLabel) {
+      settle({ confirmed: true, checked: checkboxValue.value });
+    }
     else settle(true);
   }
 
   function cancel(): void {
     if (active.value?.kind === "alert") settle(true);
+    else if (active.value?.kind === "confirm" && active.value.checkboxLabel) {
+      settle({ confirmed: false, checked: checkboxValue.value });
+    }
     else settle(active.value?.kind === "prompt" ? null : false);
   }
 
-  return { active, inputValue, showAlert, confirm, prompt, accept, cancel };
+  return { active, inputValue, checkboxValue, showAlert, confirm, confirmWithCheckbox, prompt, accept, cancel };
 });

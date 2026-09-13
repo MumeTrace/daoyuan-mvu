@@ -486,15 +486,17 @@
 .faction-modal-overlay {
   display: flex;
   position: fixed;
+  inset: 0;
   z-index: 10000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  padding: 16px;
+  overflow: hidden;
   background-color: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
   justify-content: center;
   align-items: center;
+  box-sizing: border-box;
 }
 .faction-modal-content {
   background: linear-gradient(
@@ -506,15 +508,21 @@
   border-top: 2px solid var(--accent-gold);
   border-bottom: 2px solid var(--accent-gold);
   border-radius: 8px;
-  width: 80%;
-  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  width: min(92%, 470px);
+  max-width: 470px;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   padding: 25px;
+  overflow: hidden;
   box-shadow:
     0 0 40px rgba(0, 0, 0, 0.9),
     inset 0 0 20px rgba(255, 215, 0, 0.05);
   position: relative;
   animation: faction-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1.1);
   text-align: center;
+  box-sizing: border-box;
 }
 .faction-modal-close {
   position: absolute;
@@ -541,10 +549,123 @@
   letter-spacing: 2px;
 }
 .faction-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: 1.05em;
   color: var(--text-main);
   line-height: 1.6;
   margin-bottom: 15px;
+  padding-right: 5px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.faction-modal-body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.faction-modal-content--lore {
+  width: min(94vw, 680px);
+  max-width: 680px;
+}
+.faction-lore-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -3px 0 12px;
+  color: var(--text-dim);
+  font-size: 0.72em;
+  text-align: left;
+}
+.faction-lore-toolbar button {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 1px solid rgba(100, 180, 255, 0.38);
+  border-radius: 999px;
+  background: rgba(100, 180, 255, 0.08);
+  color: var(--accent-mana);
+  font: inherit;
+  cursor: pointer;
+}
+.faction-modal-body--lore {
+  padding-right: 0;
+  text-align: left;
+}
+.faction-lore-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.faction-lore-heading {
+  grid-column: 1 / -1;
+  margin-top: 5px;
+  padding: 7px 10px;
+  border-left: 3px solid var(--accent-gold);
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.1), transparent);
+  color: var(--accent-gold);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.faction-lore-field {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+  box-sizing: border-box;
+}
+.faction-lore-field.is-long {
+  grid-column: 1 / -1;
+}
+.faction-lore-field strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--rare-text);
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+}
+.faction-lore-field p,
+.faction-lore-raw {
+  margin: 0;
+  color: var(--text-main);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.faction-lore-text {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 7px 5px;
+  color: var(--text-main);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.faction-lore-field p {
+  font-size: 0.88em;
+}
+.faction-lore-raw {
+  text-align: left;
+}
+
+@media (max-width: 600px) {
+  .faction-modal-content--lore {
+    width: calc(100vw - 16px);
+    padding: 17px 13px;
+  }
+  .faction-lore-toolbar {
+    align-items: flex-start;
+    font-size: 0.68em;
+  }
+  .faction-lore-blocks {
+    grid-template-columns: 1fr;
+  }
+  .faction-lore-field,
+  .faction-lore-field.is-long {
+    grid-column: 1;
+  }
 }
 .faction-modal-map {
   display: block;

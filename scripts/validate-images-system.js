@@ -9,7 +9,10 @@ import {
   getSectMapImages,
   groupCharacterImagesByTheme,
 } from "../src/features/image-library/selectors.ts";
-import { setImageLibrary } from "../src/features/image-library/store.ts";
+import {
+  setImageLibrary,
+  setWorkshopImageLibrary,
+} from "../src/features/image-library/store.ts";
 import { canUsePortraitTheme } from "../src/features/portraits/rules.ts";
 import { parsePortraitDrawers } from "../src/features/portraits/drawers.ts";
 import {
@@ -153,6 +156,86 @@ globalThis.window = {
     }),
   }),
 };
+
+const { loadWorkshopImages } = await import(
+  "../src/features/image-library/index.ts"
+);
+const workshopFixture = parseImageLibrary({
+  schemaVersion: 2,
+  data: {
+    entities: {
+      测试人物: {
+        type: "character",
+        images: [
+          {
+            url: "https://example.com/default-1.png",
+            theme: "default",
+            tags: ["工坊标签"],
+          },
+          {
+            url: "https://example.com/workshop.png",
+            theme: "festival",
+          },
+        ],
+      },
+      工坊宗门: {
+        type: "sect",
+        images: [{ url: "https://example.com/workshop-map.png", theme: "map" }],
+      },
+      测试宗门: {
+        type: "character",
+        images: [{ url: "https://example.com/type-conflict.png", theme: "default" }],
+      },
+    },
+  },
+});
+window.parent = {
+  DaoyuanWorkshopAPI: {
+    getImages: () => {
+      throw new Error("初始化前的旧工坊接口不应被调用");
+    },
+  },
+};
+window.waitGlobalInitialized = async (name) => {
+  assert.equal(name, "DaoyuanWorkshopAPI");
+  window.parent.DaoyuanWorkshopAPI = {
+    getImages: async () => workshopFixture,
+  };
+};
+assert.equal(await loadWorkshopImages(), true);
+assert.deepEqual(
+  getCharacterEntity("测试人物")?.images.find(
+    (image) => image.url === "https://example.com/default-1.png",
+  )?.tags,
+  ["工坊标签"],
+);
+assert.equal(
+  getCharacterEntity("测试人物")?.images.some(
+    (image) => image.url === "https://example.com/workshop.png",
+  ),
+  true,
+);
+assert.equal(
+  getSectMapImages("工坊宗门")[0]?.url,
+  "https://example.com/workshop-map.png",
+);
+assert.equal(getSectMapImages("测试宗门")[0]?.url, "https://example.com/map.png");
+setWorkshopImageLibrary(null);
+assert.equal(getSectMapImages("工坊宗门").length, 0);
+
+delete window.waitGlobalInitialized;
+window.parent = {
+  DaoyuanWorkshopAPI: {
+    getImages: async () => ({ schemaVersion: 1, data: {} }),
+  },
+};
+assert.equal(await loadWorkshopImages(), true);
+assert.equal(
+  getSectMapImages("工坊宗门")[0]?.url,
+  "https://example.com/workshop-map.png",
+);
+assert.equal(getCharacterEntity("测试人物")?.type, "character");
+window.parent = {};
 
 const { migrateLegacyPortraitPreferences } = await import(
   "../src/features/portraits/migration.ts"

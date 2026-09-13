@@ -57,6 +57,13 @@ onBeforeUnmount(() => globalThis.removeEventListener?.("keydown", onKeydown));
         type="text"
         autocomplete="off"
       />
+      <label v-if="dialog.active.checkboxLabel" class="dy-status-dialog-checkbox">
+        <input v-model="dialog.checkboxValue" type="checkbox" />
+        <span>{{ dialog.active.checkboxLabel }}</span>
+      </label>
+      <p v-if="dialog.active.checkboxNote" class="dy-status-dialog-checkbox-note">
+        {{ dialog.active.checkboxNote }}
+      </p>
       <div class="dy-status-dialog-actions">
         <button v-if="dialog.active.kind !== 'alert'" class="dy-status-dialog-cancel" type="button" @click="dialog.cancel">
           {{ dialog.active.cancelText }}

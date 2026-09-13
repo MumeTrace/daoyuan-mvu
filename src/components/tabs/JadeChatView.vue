@@ -15,6 +15,7 @@ const statusDialog = useStatusDialogStore();
 const detailOpen = ref(false);
 const reply = ref("");
 const messagesRoot = ref<HTMLElement | null>(null);
+const replyInput = ref<HTMLTextAreaElement | null>(null);
 const activeData = computed<DataRecord>(() => jade.contacts[jade.activeContact] ?? {});
 const history = computed(() => {
   const source = activeData.value.历史记录;
@@ -22,6 +23,13 @@ const history = computed(() => {
   return Object.entries(source as Record<string, DataRecord>);
 });
 const activePortrait = computed(() => portraits.getUrl(jade.activeContact, activeData.value.性别));
+
+function resizeReplyInput(): void {
+  const element = replyInput.value;
+  if (!element) return;
+  element.style.height = "auto";
+  element.style.height = `${Math.min(element.scrollHeight, 120)}px`;
+}
 
 async function send(): Promise<void> {
   const content = reply.value.trim();
@@ -35,6 +43,10 @@ watch(() => [jade.activeContact, history.value.length], () => {
   void nextTick(() => {
     if (messagesRoot.value) messagesRoot.value.scrollTop = messagesRoot.value.scrollHeight;
   });
+}, { immediate: true });
+
+watch(reply, () => {
+  void nextTick(resizeReplyInput);
 }, { immediate: true });
 
 async function removeMessage(messageId: string): Promise<void> {
@@ -86,7 +98,7 @@ async function retry(messageId: string): Promise<void> {
       <div v-if="!history.length" class="dy-empty-chat">暂无传讯记录</div>
     </div>
     <div class="wx-chat-input-area"><div class="message-reply-container">
-      <textarea id="wx-reply-input" v-model="reply" class="reply-input" rows="1" :disabled="jade.generating" :placeholder="`输入传讯给 ${jade.activeContact}... (Enter发送, Shift+Enter换行)`" @keydown.enter.exact.prevent="send"></textarea>
+      <textarea id="wx-reply-input" ref="replyInput" v-model="reply" class="reply-input" rows="1" :disabled="jade.generating" :placeholder="`输入传讯给 ${jade.activeContact}... (Enter发送, Shift+Enter换行)`" @input="resizeReplyInput" @keydown.enter.exact.prevent="send"></textarea>
       <button v-if="jade.generating" id="wx-reply-btn" class="reply-button dy-stop-generation" type="button" @click="jade.stopGeneration">■ 停止</button>
       <button v-else id="wx-reply-btn" class="reply-button" type="button" :disabled="!reply.trim()" @click="send">发送</button>
     </div></div>

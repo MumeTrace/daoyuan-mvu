@@ -100,6 +100,8 @@ pnpm install
 ## 9. 图片与本地存储规范
 
 - 远程图片库必须经过 Schema、实体类型、URL 和主题校验。
+- 道渊工坊属于可选第三方能力，只能通过 `src/features/image-library/workshop/` 访问；接口缺失、超时、报错或 Schema 无效时必须保留主图片库并继续渲染。
+- 工坊图片只能在图片库领域层与主库合并，组件和 Pinia Store 不得直接读取 `window.parent.DaoyuanWorkshopAPI`。
 - 抽屉名称、图标、顺序和别名必须读取并校验远程 `portrait-drawers.json`；不得在组件或 Store 中为远程主题另写一套显示映射。
 - 角色主题选择、索引和图片引用存入 `daoyuan_portrait_preferences_v2`。
 - 本地上传的 base64 图片本体存入 IndexedDB 数据库 `daoyuan_status_assets`。

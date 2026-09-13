@@ -1,7 +1,15 @@
 import { fetchImageLibrary } from "./api.ts";
-import { clearImageLibraryCache, readImageLibraryCache, writeImageLibraryCache } from "./cache.ts";
+import {
+  clearImageLibraryCache,
+  clearWorkshopImageLibraryCache,
+  readImageLibraryCache,
+  readWorkshopImageLibraryCache,
+  writeImageLibraryCache,
+  writeWorkshopImageLibraryCache,
+} from "./cache.ts";
 import { parseImageLibrary } from "./schema.ts";
-import { getImageLibraryState, setImageLibrary } from "./store.ts";
+import { getImageLibraryState, setImageLibrary, setWorkshopImageLibrary } from "./store.ts";
+import { readWorkshopImageLibrary } from "./workshop/index.ts";
 export * from "./selectors.ts";
 export { getImageLibraryState } from "./store.ts";
 function notify(): void { globalThis.dispatchEvent?.(new CustomEvent("daoyuan_images_changed")); }
@@ -15,8 +23,57 @@ export async function initializeImageLibrary(options: { autoFetch?: boolean } = 
 }
 export async function refreshImageLibrary() {
   const parsed = parseImageLibrary(await fetchImageLibrary());
-  writeImageLibraryCache(parsed);
+  try {
+    writeImageLibraryCache(parsed);
+  } catch (error) {
+    console.warn(
+      "[道渊状态栏] 图片库缓存写入失败，本次继续使用已下载数据:",
+      error,
+    );
+  }
   setImageLibrary(parsed, "remote");
   notify();
   return parsed;
+}
+
+export interface WorkshopImageLoadResult {
+  loaded: boolean;
+  refreshed: boolean;
+}
+
+export async function loadWorkshopImagesWithStatus(
+  options: { timeoutMs?: number } = {},
+): Promise<WorkshopImageLoadResult> {
+  let loadedFromCache = false;
+  try {
+    const cached = readWorkshopImageLibraryCache();
+    if (cached) {
+      setWorkshopImageLibrary(parseImageLibrary(cached));
+      loadedFromCache = true;
+      notify();
+    }
+  } catch (error) {
+    console.warn("[道渊状态栏] 工坊图片缓存无效，已忽略:", error);
+    clearWorkshopImageLibraryCache();
+  }
+
+  const parsed = await readWorkshopImageLibrary(options.timeoutMs);
+  if (!parsed) return { loaded: loadedFromCache, refreshed: false };
+  try {
+    writeWorkshopImageLibraryCache(parsed);
+  } catch (error) {
+    console.warn(
+      "[道渊状态栏] 工坊图片缓存写入失败，本次继续使用已读取数据:",
+      error,
+    );
+  }
+  setWorkshopImageLibrary(parsed);
+  notify();
+  return { loaded: true, refreshed: true };
+}
+
+export async function loadWorkshopImages(
+  options: { timeoutMs?: number } = {},
+): Promise<boolean> {
+  return (await loadWorkshopImagesWithStatus(options)).loaded;
 }

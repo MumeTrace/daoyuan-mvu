@@ -26,17 +26,27 @@ function contactPreview(name: string, data: DataRecord): { time: string; label: 
   return { time: text(records[lastId]?.时间, ""), label: reads[name] === lastId ? "[没有新传讯]" : "[收到新传讯]", unread: reads[name] !== lastId };
 }
 
+function latestMessageId(name: string): string {
+  const activeData = jade.contacts[name] ?? {};
+  const records = activeData.历史记录 && typeof activeData.历史记录 === "object"
+    ? activeData.历史记录 as Record<string, DataRecord>
+    : {};
+  const ids = Object.keys(records);
+  return ids[ids.length - 1] ?? "";
+}
+
+function markContactRead(name: string, messageId = latestMessageId(name)): void {
+  if (!name || !messageId) return;
+  const reads = readStorageJson<Record<string, string>>(READ_KEY, {});
+  if (reads[name] === messageId) return;
+  reads[name] = messageId;
+  writeStorageJson(READ_KEY, reads);
+}
+
 function openContact(name: string): void {
   if (longPressed.value) { longPressed.value = false; return; }
   jade.activeContact = name;
-  const activeData = jade.contacts[name] ?? {};
-  const records = activeData.历史记录 && typeof activeData.历史记录 === "object" ? activeData.历史记录 as Record<string, DataRecord> : {};
-  const ids = Object.keys(records);
-  if (ids.length) {
-    const reads = readStorageJson<Record<string, string>>(READ_KEY, {});
-    reads[name] = ids[ids.length - 1] ?? "";
-    writeStorageJson(READ_KEY, reads);
-  }
+  markContactRead(name);
 }
 
 function startPress(name: string, event: PointerEvent): void {
@@ -61,6 +71,12 @@ function back(): void {
 watch(() => jade.contacts, (contacts) => {
   if (jade.activeContact && !contacts[jade.activeContact]) back();
 }, { deep: true, immediate: true });
+
+watch(
+  () => [jade.activeContact, latestMessageId(jade.activeContact)] as const,
+  ([name, messageId]) => markContactRead(name, messageId),
+  { immediate: true },
+);
 </script>
 
 <template>

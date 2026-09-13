@@ -21,6 +21,7 @@ function validateFloatingSources() {
     path.join(projectRoot, "src/compatibility-runtime.ts"),
     path.join(projectRoot, "src/bridge/event-bus.ts"),
     path.join(projectRoot, "src/bridge/tavern-api.ts"),
+    path.join(projectRoot, "src/features/image-library/workshop/api.ts"),
   ];
   const source = sourcePaths
     .map(sourcePath => fs.readFileSync(sourcePath, "utf8"))
@@ -178,6 +179,10 @@ const requiredMarkers = [
   "daoyuan_status_assets",
   "idb:daoyuan-portrait:",
   "daoyuan_images_changed",
+  "DaoyuanWorkshopAPI",
+  "getEntry",
+  "getCharWorldbookNames",
+  "当前状态没有可替换的立绘",
   "portrait-pool-selector",
   "portrait-pool-body-open",
   "switchPortraitInPool",

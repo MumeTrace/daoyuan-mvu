@@ -1,5 +1,8 @@
 import { getDaoyuanStorage } from "../../bridge/storage.ts";
-import { IMAGES_CACHE_KEY } from "../image-library/constants.ts";
+import {
+  IMAGES_CACHE_KEY,
+  WORKSHOP_IMAGES_CACHE_KEY,
+} from "../image-library/constants.ts";
 import {
   isStoredLocalPortraitRef,
   persistPortraitImageUrls,
@@ -99,6 +102,7 @@ function writeWithCacheRecovery(preferences: PortraitPreferences): void {
 
   try {
     storage.removeItem(IMAGES_CACHE_KEY);
+    storage.removeItem(WORKSHOP_IMAGES_CACHE_KEY);
   } catch (error) {
     console.warn("[道渊] 图片库缓存清理失败，继续重试立绘迁移:", error);
   }

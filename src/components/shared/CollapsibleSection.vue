@@ -2,12 +2,21 @@
 import { onMounted, ref, watch } from "vue";
 import { readStorageJson, writeStorageJson } from "../../bridge/storage";
 
-const props = defineProps<{ storageKey: string }>();
+const props = defineProps<{ storageKey: string; legacyStorageKey?: string }>();
 const collapsed = ref(false);
 const STORAGE_KEY = "dy_collapse";
 
 onMounted(() => {
-  collapsed.value = Boolean(readStorageJson<Record<string, boolean>>(STORAGE_KEY, {})[props.storageKey]);
+  const state = readStorageJson<Record<string, boolean>>(STORAGE_KEY, {});
+  if (Object.prototype.hasOwnProperty.call(state, props.storageKey)) {
+    collapsed.value = Boolean(state[props.storageKey]);
+    return;
+  }
+  if (props.legacyStorageKey && Object.prototype.hasOwnProperty.call(state, props.legacyStorageKey)) {
+    collapsed.value = Boolean(state[props.legacyStorageKey]);
+    state[props.storageKey] = collapsed.value;
+    writeStorageJson(STORAGE_KEY, state);
+  }
 });
 
 watch(collapsed, (value) => {

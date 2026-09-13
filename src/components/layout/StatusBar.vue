@@ -20,6 +20,7 @@ import JadePromptModal from "../modals/JadePromptModal.vue";
 import WorldMap from "../map/WorldMap.vue";
 import FairyGuide from "../map/FairyGuide.vue";
 import AchievementToast from "../shared/AchievementToast.vue";
+import PortraitCycleToast from "../shared/PortraitCycleToast.vue";
 
 const ui = useUiStore();
 const imageLibrary = useImageLibraryStore();
@@ -79,4 +80,5 @@ onBeforeUnmount(() => {
   <ModalsRoot />
   <JadePromptModal />
   <AchievementToast />
+  <PortraitCycleToast />
 </template>

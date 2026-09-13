@@ -57,8 +57,10 @@ export const useSettingsStore = defineStore("settings", () => {
   }
   function saveLoreSelection(characterName: string, selection: JadeLoreSelection[]): boolean {
     if (!characterName) return false;
-    loreSelections.value = { ...loreSelections.value, [characterName]: selection };
-    return writeStorageJson(JADE_LORE_SELECTION_KEY, loreSelections.value);
+    const next = { ...loreSelections.value, [characterName]: selection };
+    if (!writeStorageJson(JADE_LORE_SELECTION_KEY, next)) return false;
+    loreSelections.value = next;
+    return true;
   }
   function setDebugLog(message: string): void {
     const stamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });

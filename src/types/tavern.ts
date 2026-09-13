@@ -39,6 +39,11 @@ export interface TavernEventHandle {
   stop(): void;
 }
 
+export interface TavernCharWorldbooks {
+  primary: string | null;
+  additional: string[];
+}
+
 export interface DaoyuanKeyValueStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -71,8 +76,15 @@ export interface TavernHost {
   eventEmit?: (event: string, ...args: unknown[]) => Promise<unknown> | unknown;
   getOrCreateChatLorebook?: () => Promise<string | null> | string | null;
   getCurrentCharPrimaryLorebook?: () => Promise<string | null> | string | null;
-  getCharLorebooks?: (options: { name: string }) => unknown;
+  getCharLorebooks?: (options?: {
+    name?: string;
+    type?: "all" | "primary" | "additional";
+  }) => unknown;
   getLorebookEntries?: (name: string, options?: { fields?: string[] }) => unknown;
+  getCharWorldbookNames?: (
+    characterName: "current" | string,
+  ) => TavernCharWorldbooks | unknown;
+  getWorldbook?: (name: string) => Promise<unknown> | unknown;
   DaoyuanStatusStorage?: DaoyuanKeyValueStorage;
   DaoyuanStatusDb?: DaoyuanStatusDbApi;
   localStorage?: Storage;

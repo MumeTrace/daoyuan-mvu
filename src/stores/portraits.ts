@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { tavernApi } from "../bridge/tavern-api";
 import {
@@ -46,7 +46,16 @@ export const usePortraitStore = defineStore("portraits", () => {
   const images = useImageLibraryStore();
   const preferences = ref(readPortraitPreferences());
   const revision = ref(0);
+  const cycleNoticeRevision = ref(0);
   let initializePromise: Promise<void> | null = null;
+
+  // 图片库同步只替换图库数据，不应重挂载整条状态栏。把图库版本
+  // 映射到立绘版本后，所有已挂载的头像、抽屉与大图会原位重算。
+  watch(
+    () => images.revision,
+    () => { revision.value += 1; },
+    { flush: "sync" },
+  );
 
   function persist(): boolean {
     try {
@@ -87,14 +96,7 @@ export const usePortraitStore = defineStore("portraits", () => {
     );
   }
 
-  function themeUrls(name: string, theme: string): string[] {
-    const custom = resolvePortraitImageUrls(
-      preferences.value.customImages[name]?.[theme],
-    )
-      .map((url) => safeImageUrl(url))
-      .filter(Boolean);
-    if (custom.length) return custom;
-
+  function defaultThemeUrls(name: string, theme: string): string[] {
     const entity = asRecord(images.entities[name]);
     const entityImages = Array.isArray(entity.images) ? entity.images : [];
     return entityImages
@@ -102,6 +104,15 @@ export const usePortraitStore = defineStore("portraits", () => {
       .filter((image) => image.theme === theme)
       .map((image) => safeImageUrl(image.url))
       .filter(Boolean);
+  }
+
+  function themeUrls(name: string, theme: string): string[] {
+    const custom = resolvePortraitImageUrls(
+      preferences.value.customImages[name]?.[theme],
+    )
+      .map((url) => safeImageUrl(url))
+      .filter(Boolean);
+    return custom.length ? custom : defaultThemeUrls(name, theme);
   }
 
   function visibleThemes(name: string): string[] {
@@ -192,7 +203,10 @@ export const usePortraitStore = defineStore("portraits", () => {
   function cycle(name: string, gender: unknown = ""): boolean {
     const theme = activeTheme(name, gender);
     const urls = themeUrls(name, theme);
-    if (urls.length < 2) return false;
+    if (urls.length < 2) {
+      cycleNoticeRevision.value += 1;
+      return false;
+    }
     const current = Number(preferences.value.indices[name]?.[theme] ?? 0);
     setIndex(name, theme, (current + 1) % urls.length);
     return true;
@@ -204,7 +218,10 @@ export const usePortraitStore = defineStore("portraits", () => {
     urls: string[],
   ): Promise<boolean> {
     const valid = urls.map((url) => safeImageUrl(url)).filter(Boolean);
-    const stored = await persistPortraitImageUrls(valid);
+    const defaults = defaultThemeUrls(name, theme);
+    const matchesDefault = valid.length === defaults.length
+      && valid.every((url, index) => url === defaults[index]);
+    const stored = matchesDefault ? [] : await persistPortraitImageUrls(valid);
     const previous = clonePreferences(preferences.value);
 
     if (stored.length) {
@@ -216,6 +233,8 @@ export const usePortraitStore = defineStore("portraits", () => {
         delete preferences.value.customImages[name];
       }
     }
+    preferences.value.indices[name] ??= {};
+    preferences.value.indices[name]![theme] = 0;
 
     if (!persist()) {
       preferences.value = previous;
@@ -277,6 +296,7 @@ export const usePortraitStore = defineStore("portraits", () => {
   return {
     preferences,
     revision,
+    cycleNoticeRevision,
     initialize,
     persist,
     reload,

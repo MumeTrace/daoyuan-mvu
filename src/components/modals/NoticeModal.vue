@@ -14,6 +14,10 @@ const activeTab = ref("版本更新");
 const tabs = computed(() => Object.keys(notice.tabs).length ? Object.keys(notice.tabs) : ["版本更新", "立绘更新", "其他"]);
 const content = computed(() => notice.tabs[activeTab.value] || "暂无内容");
 const safeContent = computed(() => sanitizeNoticeHtmlCompat(content.value));
+const versionAttention = computed(() => notice.versionUnread);
+const portraitAttention = computed(
+  () => notice.portraitUnread || !images.loaded || Boolean(images.error),
+);
 type NoticeActionName = "version" | "wiki" | "sync";
 const activatingAction = ref<NoticeActionName | null>(null);
 let actionPulseTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
@@ -95,9 +99,9 @@ async function onPortraitSyncClick(): Promise<void> {
       <footer class="dy-notice-footer">
         <small>传讯时间：{{ notice.date || "未知" }}</small>
         <div class="dy-notice-actions">
-          <button class="dy-notice-action dy-notice-action--version" type="button" :class="{ 'dy-update-attention': notice.versionUnread, 'is-activating': activatingAction === 'version' }" @click="onReleaseClick">🚀 最新版本：{{ notice.version || "未知" }}</button>
+          <button class="dy-notice-action dy-notice-action--version" type="button" :class="{ 'dy-update-attention': versionAttention, 'is-activating': activatingAction === 'version' }" @click="onReleaseClick"><span>🚀 最新版本：{{ notice.version || "未知" }}</span><span v-if="versionAttention" class="dy-notice-update-dot" aria-hidden="true"></span></button>
           <a class="dy-notice-action dy-notice-action--wiki" :class="{ 'is-activating': activatingAction === 'wiki' }" href="https://daoyuan.mayuworld.com/" target="_blank" rel="noopener noreferrer" @click="onWikiClick">📖 查阅道渊 Wiki 图鉴</a>
-          <button class="dy-notice-action dy-notice-action--sync" type="button" :class="{ 'dy-update-attention': notice.portraitUnread, 'is-activating': activatingAction === 'sync' }" @click="onPortraitSyncClick">🖼️ 同步最新图片库</button>
+          <button class="dy-notice-action dy-notice-action--sync" type="button" :class="{ 'dy-update-attention': portraitAttention, 'is-activating': activatingAction === 'sync' }" @click="onPortraitSyncClick"><span>🖼️ 同步最新图片库</span><span v-if="portraitAttention" class="dy-notice-update-dot" aria-hidden="true"></span></button>
         </div>
       </footer>
     </section>

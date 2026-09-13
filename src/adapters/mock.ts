@@ -195,6 +195,66 @@ window.getCharLorebooks = function () {
   return { primary: "模拟角色世界书", additional: ["模拟附加世界书"] };
 };
 
+window.getCharWorldbookNames = function () {
+  return { primary: "模拟角色世界书", additional: ["模拟工坊扩展世界书"] };
+};
+
+window.getWorldbook = async function (name: string) {
+  if (name === "模拟角色世界书") {
+    return [
+      {
+        uid: 1,
+        name: "柳如烟",
+        enabled: true,
+        strategy: { keys: ["柳如烟"] },
+        content: "姓名：柳如烟\n身份：青梅竹马\n性格：温柔坚定",
+      },
+    ];
+  }
+  if (name === "模拟工坊扩展世界书") {
+    return [
+      {
+        uid: 2,
+        name: "姬紫月",
+        enabled: true,
+        strategy: { keys: ["姬紫月", "永宁公主"] },
+        content: "姓名：姬紫月\n身份：永宁公主\n能力：紫色帝气",
+      },
+      {
+        uid: 3,
+        name: "不属于工坊的附加条目",
+        enabled: true,
+        strategy: { keys: ["无关人物"] },
+        content: "这条内容不应进入受限人物检索范围。",
+      },
+    ];
+  }
+  return [];
+};
+
+window.DaoyuanWorkshopAPI = {
+  async getEntry() {
+    return {
+      schemaVersion: 1,
+      data: {
+        revision: 1,
+        workshopOrigin: "https://workshop.example.invalid",
+        entries: [
+          {
+            packageId: "mock-character-pack",
+            packageDisplayName: "模拟人物扩展",
+            version: "1.0.0",
+            entryId: "ji-zi-yue",
+            kind: "character",
+            displayName: "姬紫月",
+            primaryKeys: ["姬紫月", "永宁公主"],
+          },
+        ],
+      },
+    };
+  },
+};
+
 window.getLorebookEntries = async function () {
   return [
     {

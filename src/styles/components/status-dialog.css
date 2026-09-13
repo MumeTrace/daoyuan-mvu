@@ -100,6 +100,32 @@
   box-shadow: 0 0 10px var(--dialog-glow);
 }
 
+.dy-status-dialog-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: -2px 0 6px;
+  color: var(--text-dim);
+  font-size: 0.86em;
+  cursor: pointer;
+}
+
+.dy-status-dialog-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dialog-accent);
+  cursor: pointer;
+}
+
+.dy-status-dialog-checkbox-note {
+  margin: 0 0 16px;
+  color: var(--accent-mana);
+  font-size: 0.76em;
+  opacity: 0.82;
+}
+
 .dy-status-dialog-actions {
   display: flex;
   justify-content: center;

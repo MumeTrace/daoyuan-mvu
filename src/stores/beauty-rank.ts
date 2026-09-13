@@ -73,6 +73,37 @@ function loadPresets(): Record<string, BeautyForumSettings> {
   );
 }
 
+function beautyRankOrder(data: DataRecord): number {
+  const explicitValue = data.排名序;
+  if (explicitValue !== null && explicitValue !== undefined && String(explicitValue).trim()) {
+    const explicit = Number(explicitValue);
+    if (Number.isFinite(explicit)) return explicit;
+  }
+
+  const raw = String(data.排名 ?? "").trim().replace(/^第/, "").replace(/名$/, "");
+  const numeric = Number.parseInt(raw, 10);
+  if (Number.isFinite(numeric)) return numeric;
+
+  const digits: Record<string, number> = {
+    零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5,
+    六: 6, 七: 7, 八: 8, 九: 9,
+  };
+  let rest = raw;
+  let total = 0;
+  const hundredIndex = rest.indexOf("百");
+  if (hundredIndex >= 0) {
+    total += (digits[rest.slice(0, hundredIndex)] ?? 1) * 100;
+    rest = rest.slice(hundredIndex + 1);
+  }
+  const tenIndex = rest.indexOf("十");
+  if (tenIndex >= 0) {
+    total += (digits[rest.slice(0, tenIndex)] ?? 1) * 10;
+    rest = rest.slice(tenIndex + 1);
+  }
+  if (rest in digits) total += digits[rest] ?? 0;
+  return total > 0 ? total : Number.MAX_SAFE_INTEGER;
+}
+
 export const useBeautyRankStore = defineStore("beauty-rank", () => {
   const ranks = ref<NamedRecord>({});
   const cards = ref<BeautyCard[]>([]);
@@ -108,7 +139,11 @@ export const useBeautyRankStore = defineStore("beauty-rank", () => {
 
   function updateFromStatData(statData: StatData): void {
     ranks.value = asNamedRecord(statData.绝色榜);
-    setCards(Object.entries(ranks.value).map(([name, data]) => ({ name, data })));
+    const ordered = Object.entries(ranks.value)
+      .map(([name, data], index) => ({ name, data, index }))
+      .sort((left, right) => beautyRankOrder(left.data) - beautyRankOrder(right.data) || left.index - right.index)
+      .map(({ name, data }) => ({ name, data }));
+    setCards(ordered);
   }
 
   function setStatus(message: unknown, tone = "info"): void {

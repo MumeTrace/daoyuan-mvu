@@ -16,6 +16,7 @@ export const useUiStore = defineStore("ui", () => {
   const factionTitle = ref("");
   const factionNote = ref("");
   const factionImageUrl = ref("");
+  const factionContentKind = ref<"plain" | "lore">("plain");
   const portraitEditorName = ref("");
   const portraitEditorTheme = ref("default");
   const portraitMissingName = ref("");
@@ -48,10 +49,16 @@ export const useUiStore = defineStore("ui", () => {
     activeModal.value = "image";
   }
 
-  function openFactionModal(title: string, note: string, imageUrl = ""): void {
+  function openFactionModal(
+    title: string,
+    note: string,
+    imageUrl = "",
+    options: { contentKind?: "plain" | "lore" } = {},
+  ): void {
     factionTitle.value = title;
     factionNote.value = note;
     factionImageUrl.value = safeImageUrl(imageUrl);
+    factionContentKind.value = options.contentKind ?? "plain";
     activeModal.value = "faction";
   }
 
@@ -107,6 +114,7 @@ export const useUiStore = defineStore("ui", () => {
     factionTitle,
     factionNote,
     factionImageUrl,
+    factionContentKind,
     portraitEditorName,
     portraitEditorTheme,
     portraitMissingName,

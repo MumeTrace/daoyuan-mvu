@@ -38,7 +38,7 @@ const textRows = computed(() => {
 <template>
   <div :class="cardClass" v-bind="{ [`data-${kind}`]: name }">
     <CardDiscard :kind="kind" :name="name" />
-    <CollapsibleSection :storage-key="`${kind}:${name}`">
+    <CollapsibleSection :storage-key="`${kind}:${name}`" :legacy-storage-key="name">
       <template #header>
         <button
           :class="[kind === 'npc' ? 'npc-name' : 'partner-name', 'dy-lore-name']"

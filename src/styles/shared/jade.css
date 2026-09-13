@@ -397,6 +397,18 @@
 .dy-prompt-section label { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 0.85em; }
 .dy-prompt-heading-row, .dy-preset-row, .dy-model-row { display: flex; align-items: center; gap: 8px; }
 .dy-prompt-heading-row { justify-content: space-between; }
+.dy-lore-save-button {
+  min-width: 96px;
+  height: 30px;
+  padding: 0 10px;
+  background: linear-gradient(135deg, var(--accent-exp), #c65d12);
+  font-size: 0.78em;
+}
+.dy-lore-save-status {
+  color: var(--accent-san) !important;
+  text-align: right;
+}
+.dy-lore-save-status[data-tone="error"] { color: var(--accent-blood) !important; }
 .dy-preset-row select { flex: 1; min-width: 0; }
 .dy-prompt-section.dy-preset-section {
   display: flex;

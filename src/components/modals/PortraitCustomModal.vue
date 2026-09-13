@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { getThemeUi } from "../../features/portraits/theme-ui";
+import { useImageLibraryStore } from "../../stores/image-library";
 import { usePortraitStore } from "../../stores/portraits";
+import { useStatusDialogStore } from "../../stores/status-dialog";
 import { useUiStore } from "../../stores/ui";
 import { safeImageUrl } from "../../utils/safe-url";
 
 const ui = useUiStore();
+const images = useImageLibraryStore();
 const portraits = usePortraitStore();
+const statusDialog = useStatusDialogStore();
 interface UrlRow { id: number; value: string }
 let nextUrlRowId = 0;
 const createUrlRow = (value = ""): UrlRow => ({ id: ++nextUrlRowId, value });
@@ -83,10 +87,11 @@ async function save(): Promise<void> {
 function requestReset(action: "current" | "all"): void { confirmAction.value = action; }
 function cancelReset(): void { confirmAction.value = null; }
 async function confirmReset(): Promise<void> {
+  const resetsAll = confirmAction.value === "all";
   saving.value = true;
   error.value = "";
   try {
-    const reset = confirmAction.value === "all"
+    const reset = resetsAll
       ? await portraits.resetAllCustomImages()
       : await portraits.setCustomImages(
           ui.portraitEditorName,
@@ -99,6 +104,15 @@ async function confirmReset(): Promise<void> {
     }
     sync();
     ui.closeModal();
+    if (resetsAll) {
+      const refreshed = await images.refresh();
+      await statusDialog.showAlert(
+        refreshed
+          ? "所有自定义立绘已重置，并已恢复当前云端默认立绘。"
+          : "所有自定义立绘已重置；云端图片库刷新失败，当前继续使用已有默认图片。",
+        { title: "重置完成", tone: refreshed ? "default" : "warning" },
+      );
+    }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : "重置立绘失败。";
   } finally {
