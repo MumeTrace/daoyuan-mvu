@@ -6,6 +6,8 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+const buildTarget = process.env.BUILD_TARGET || "floating";
+console.log(`[道渊构建] target=${buildTarget} step=floating-postprocess`);
 const distHtmlPath = path.join(projectRoot, "dist/index.html");
 const outputPath = path.join(projectRoot, "dist/daoyuan-floating-mvu.json");
 const legacyOutputPath = path.join(
@@ -52,39 +54,13 @@ const bootstrapSource = String.raw`
     throw new Error("[道渊悬浮状态栏] 未找到酒馆助手数据桥");
   }
 
-  const hostJQuery = bridge.api.$;
-  if (typeof hostJQuery !== "function") {
-    throw new Error("[道渊悬浮状态栏] 酒馆助手未提供 jQuery");
-  }
-
-  function childJQuery(selector, context) {
-    if (typeof selector === "function") {
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", selector, { once: true });
-      } else {
-        queueMicrotask(selector);
-      }
-      return hostJQuery(document);
-    }
-    if (typeof selector === "string" && context === undefined) {
-      return hostJQuery(selector, document);
-    }
-    return hostJQuery(selector, context);
-  }
-
-  Object.setPrototypeOf(childJQuery, hostJQuery);
-  Object.assign(childJQuery, hostJQuery);
-  childJQuery.fn = hostJQuery.fn;
-
-  window.$ = childJQuery;
-  window.jQuery = childJQuery;
-  window._ = bridge.api._;
   window.Mvu = bridge.Mvu;
   window.waitGlobalInitialized = bridge.waitGlobalInitialized;
   window.eventOn = bridge.eventOn;
   window.eventEmit = bridge.api.eventEmit;
-  window.errorCatched = bridge.api.errorCatched;
   window.getAllVariables = bridge.getLatestMvuData;
+  window.getCurrentMessageId = bridge.getCurrentMessageId;
+  window.iframe_events = bridge.iframeEvents;
   window.DaoyuanStatusStorage =
     bridge.storage &&
     typeof bridge.storage.getItem === "function" &&
@@ -95,15 +71,15 @@ const bootstrapSource = String.raw`
   [
     "getLastMessageId",
     "getChatMessages",
-    "getVariables",
-    "replaceVariables",
-    "updateVariablesWith",
     "getLorebookEntries",
     "getOrCreateChatLorebook",
     "getCurrentCharPrimaryLorebook",
     "getCharLorebooks",
+    "getCharWorldbookNames",
+    "getWorldbook",
     "getPersonaAvatarPath",
     "generate",
+    "stopGenerationById",
   ].forEach(name => {
     if (typeof bridge.api[name] === "function") {
       window[name] = bridge.api[name];
@@ -172,27 +148,48 @@ const bootstrapSource = String.raw`
     bridge.resize(height);
   };
 
-  window.addEventListener("load", () => {
+  let resizeObserver = null;
+  let tornDown = false;
+
+  const handleLoad = () => {
     window.__daoyuanInstallStableRefresh();
     notifySize();
     requestAnimationFrame(() => {
       notifySize();
       bridge.ready();
     });
-  });
+  };
 
-  window.addEventListener("error", event => {
+  const handleError = event => {
     const message =
       event.error?.message || event.message || "悬浮界面脚本执行失败";
     if (message.includes("ResizeObserver loop")) return;
     bridge.fail(message);
-  });
-  window.addEventListener("unhandledrejection", event => {
+  };
+
+  const handleUnhandledRejection = event => {
     bridge.fail(event.reason?.message || String(event.reason || "悬浮界面初始化失败"));
-  });
+  };
+
+  window.__daoyuanFloatingTeardown = () => {
+    if (tornDown) return;
+    tornDown = true;
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    window.removeEventListener("load", handleLoad);
+    window.removeEventListener("error", handleError);
+    window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    delete window.__daoyuanInstallStableRefresh;
+    delete window.__daoyuanFloatingTeardown;
+  };
+
+  window.addEventListener("load", handleLoad, { once: true });
+  window.addEventListener("error", handleError);
+  window.addEventListener("unhandledrejection", handleUnhandledRejection);
+  window.addEventListener("pagehide", window.__daoyuanFloatingTeardown, { once: true });
 
   if (typeof ResizeObserver === "function") {
-    const resizeObserver = new ResizeObserver(notifySize);
+    resizeObserver = new ResizeObserver(notifySize);
     resizeObserver.observe(document.documentElement);
   }
 })();
@@ -201,24 +198,28 @@ const bootstrapSource = String.raw`
 function injectBootstrap(html) {
   const bootstrapTag = `<script>${bootstrapSource}<\/script>`;
   const floatingStyleTag = `<style>
-html,body{width:100%!important;height:100%!important;overflow:hidden!important;background:transparent!important;}
+html,body,#app{box-sizing:border-box!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;overflow:hidden!important;background:transparent!important;color-scheme:dark;}
 body{margin:0!important;padding:0!important;}
-.terminal-container{box-sizing:border-box!important;width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;border:0!important;border-radius:12px!important;}
+#app{display:flex!important;}
+.terminal-container{box-sizing:border-box!important;flex:1 1 auto!important;width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;border:0!important;border-radius:12px!important;}
 .terminal-container>.top-bar,.terminal-container>.header{flex:0 0 auto!important;}
 .terminal-container>.content-grid{flex:1 1 auto!important;min-width:0!important;min-height:0!important;}
 .terminal-container>.content-grid>.status-panel,.terminal-container>.content-grid>.main-panel{min-width:0!important;}
 @media (min-width:701px){
   .terminal-container>.content-grid{overflow:hidden!important;}
-  .terminal-container>.content-grid>.status-panel{min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important;}
+  .terminal-container>.content-grid>.status-panel{min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;touch-action:pan-y!important;-webkit-overflow-scrolling:touch!important;}
   .terminal-container>.content-grid>.main-panel{min-height:0!important;overflow:hidden!important;}
   .terminal-container>.content-grid>.main-panel>.nav-tabs{flex:0 0 auto!important;}
-  .terminal-container>.content-grid>.main-panel>.tab-content{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-x:hidden!important;overflow-y:auto!important;}
+  .terminal-container>.content-grid>.main-panel>.tab-content{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;touch-action:pan-y!important;-webkit-overflow-scrolling:touch!important;}
 }
 @media (max-width:700px){
-  .terminal-container>.content-grid{overflow-x:hidden!important;overflow-y:auto!important;}
+  .terminal-container>.content-grid{overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain!important;touch-action:pan-y!important;-webkit-overflow-scrolling:touch!important;}
   .terminal-container>.content-grid>.status-panel{overflow:visible!important;}
   .terminal-container>.content-grid>.main-panel{min-height:auto!important;overflow:visible!important;}
   .terminal-container>.content-grid>.main-panel>.tab-content{flex:none!important;max-height:none!important;overflow:visible!important;}
+}
+@media (pointer:coarse), (max-width:700px){
+  .terminal-container,.dy-status-dialog-overlay,.dy-notice-overlay,.jiuqi-overlay,.dy-portrait-search-overlay,.dy-jade-settings-overlay,.portrait-custom-modal,.dy-missing-portrait-overlay,.image-modal-overlay,.faction-modal-overlay,.luck-modal-overlay,.forum-settings-overlay,.portrait-reset-confirm{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}
 }
 *{scrollbar-width:thin;scrollbar-color:rgba(220,177,75,.58) rgba(5,6,9,.2);}
 *::-webkit-scrollbar{width:6px!important;height:6px!important;}
@@ -306,6 +307,9 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   }
 
   const floatingStorageMemory = new Map();
+  const floatingStorageVolatileKeys = new Set();
+  const floatingStorageRemovedKeys = new Set();
+  let floatingStorageVolatileClear = false;
 
   function getTavernStorage() {
     try {
@@ -324,6 +328,17 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   const sharedStatusStorage = {
     getItem(key) {
       const normalizedKey = String(key);
+      if (floatingStorageVolatileKeys.has(normalizedKey)) {
+        return floatingStorageMemory.has(normalizedKey)
+          ? floatingStorageMemory.get(normalizedKey)
+          : null;
+      }
+      if (
+        floatingStorageRemovedKeys.has(normalizedKey) ||
+        floatingStorageVolatileClear
+      ) {
+        return null;
+      }
       const storage = getTavernStorage();
       if (storage) {
         try {
@@ -338,19 +353,48 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     setItem(key, value) {
       const normalizedKey = String(key);
       const normalizedValue = String(value);
+      floatingStorageMemory.set(normalizedKey, normalizedValue);
+      floatingStorageVolatileKeys.add(normalizedKey);
+      floatingStorageRemovedKeys.delete(normalizedKey);
       const storage = getTavernStorage();
       if (storage) {
-        storage.setItem(normalizedKey, normalizedValue);
+        try {
+          storage.setItem(normalizedKey, normalizedValue);
+          floatingStorageVolatileKeys.delete(normalizedKey);
+        } catch (error) {
+          throw error;
+        }
       }
-      floatingStorageMemory.set(normalizedKey, normalizedValue);
     },
     removeItem(key) {
       const normalizedKey = String(key);
+      floatingStorageMemory.delete(normalizedKey);
+      floatingStorageVolatileKeys.delete(normalizedKey);
+      floatingStorageRemovedKeys.add(normalizedKey);
       const storage = getTavernStorage();
       if (storage) {
-        storage.removeItem(normalizedKey);
+        try {
+          storage.removeItem(normalizedKey);
+          floatingStorageRemovedKeys.delete(normalizedKey);
+        } catch (error) {
+          throw error;
+        }
       }
-      floatingStorageMemory.delete(normalizedKey);
+    },
+    clear() {
+      floatingStorageMemory.clear();
+      floatingStorageVolatileKeys.clear();
+      floatingStorageRemovedKeys.clear();
+      floatingStorageVolatileClear = true;
+      const storage = getTavernStorage();
+      if (storage) {
+        try {
+          storage.clear();
+          floatingStorageVolatileClear = false;
+        } catch (error) {
+          throw error;
+        }
+      }
     },
   };
 
@@ -370,6 +414,11 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     clearTimeout(petTransitionTimer);
     clearTimeout(petBubbleTimer);
     clearTimeout(panelVisibilityTimer);
+    try {
+      frame?.contentWindow?.__daoyuanFloatingTeardown?.();
+    } catch (error) {
+      console.warn("[道渊悬浮状态栏] 子界面清理失败", error);
+    }
     while (stopHandles.length > 0) {
       const stop = stopHandles.pop();
       try {
@@ -380,6 +429,8 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     }
     if (root && root.isConnected) root.remove();
     if (launcher && launcher.isConnected) launcher.remove();
+    if (frame) delete frame.__daoyuanFloatingBridge;
+    frame = null;
     tavernDocument.getElementById(PET_STYLE_ID)?.remove();
     if (tavernWindow[CLEANUP_KEY] === cleanup) {
       delete tavernWindow[CLEANUP_KEY];
@@ -477,6 +528,10 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       typeof tavernWindow.matchMedia === "function" &&
       tavernWindow.matchMedia("(pointer: coarse)").matches
     );
+  }
+
+  function usesMobileSafeRendering() {
+    return isCoarsePointer() || getViewportSize().width <= 720;
   }
 
   function getLauncherDockTrigger() {
@@ -912,14 +967,21 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     if (!root || !launcher) return;
     clearTimeout(panelVisibilityTimer);
     clearTimeout(petTransitionTimer);
+    // Android Chrome can leave a fixed iframe in an intermediate composited
+    // opacity layer. Mobile-safe layouts therefore switch visibility
+    // synchronously while retaining the independent pet animation.
+    const mobileSafeRendering = usesMobileSafeRendering();
+    const animatePanel = shouldAnimate && !mobileSafeRendering;
     collapsed = nextCollapsed;
     if (collapsed) {
       root.style.pointerEvents = "none";
-      root.style.opacity = "0";
-      root.style.transform = "translateY(5px) scale(.975)";
+      root.style.opacity = animatePanel ? "0" : "1";
+      root.style.transform = animatePanel
+        ? "translateY(5px) scale(.975)"
+        : "none";
       panelVisibilityTimer = tavernWindow.setTimeout(() => {
         if (collapsed && root) root.style.visibility = "hidden";
-      }, shouldAnimate ? 220 : 0);
+      }, animatePanel ? 220 : 0);
       if (shouldAnimate) {
         if (petAnimationDelay > 0) {
           petTransitionTimer = tavernWindow.setTimeout(
@@ -934,15 +996,24 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       setPetUpdateNotice(false);
       root.style.visibility = "visible";
       root.style.pointerEvents = "auto";
-      if (shouldAnimate) {
+      if (animatePanel) {
         root.style.opacity = "0";
         root.style.transform = "translateY(5px) scale(.975)";
-        tavernWindow.requestAnimationFrame(() => {
+        const revealPanel = () => {
           if (!collapsed && root) {
             root.style.opacity = "1";
             root.style.transform = "translateY(0) scale(1)";
           }
-        });
+        };
+        tavernWindow.requestAnimationFrame(revealPanel);
+        panelVisibilityTimer = tavernWindow.setTimeout(revealPanel, 120);
+      } else {
+        root.style.opacity = "1";
+        root.style.transform = mobileSafeRendering
+          ? "none"
+          : "translateY(0) scale(1)";
+      }
+      if (shouldAnimate) {
         if (petAnimationDelay > 0) {
           petTransitionTimer = tavernWindow.setTimeout(
             () => setPetState("open", 740),
@@ -952,8 +1023,6 @@ function floatingMvuRuntime(uiHtml, petAssets) {
           setPetState("open", 740);
         }
       } else {
-        root.style.opacity = "1";
-        root.style.transform = "translateY(0) scale(1)";
         setPetState("idle");
       }
     }
@@ -996,13 +1065,13 @@ function floatingMvuRuntime(uiHtml, petAssets) {
       "border:0",
       "outline:0",
       "border-radius:12px",
-      "background:transparent",
+      "background:linear-gradient(145deg,rgba(16,22,28,.98),rgba(8,11,15,.99))",
       "box-shadow:0 12px 34px rgba(0,0,0,.46),0 0 14px rgba(211,169,72,.055)",
       "pointer-events:auto",
       "opacity:1",
-      "transform:translateY(0) scale(1)",
+      `transform:${usesMobileSafeRendering() ? "none" : "translateY(0) scale(1)"}`,
       "transform-origin:center center",
-      "transition:opacity .22s ease,transform .22s ease",
+      `transition:${usesMobileSafeRendering() ? "none" : "opacity .22s ease,transform .22s ease"}`,
     ].join(";");
 
     const petStyle = tavernDocument.createElement("style");
@@ -1714,40 +1783,51 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     });
 
     const apiNames = [
-      "$",
-      "_",
-      "errorCatched",
       "eventEmit",
       "getLastMessageId",
       "getChatMessages",
-      "getVariables",
-      "replaceVariables",
-      "updateVariablesWith",
       "getLorebookEntries",
       "getOrCreateChatLorebook",
       "getCurrentCharPrimaryLorebook",
       "getCharLorebooks",
+      "getCharWorldbookNames",
+      "getWorldbook",
       "getPersonaAvatarPath",
-      "appendInexistentScriptButtons",
-      "getButtonEvent",
       "generate",
+      "stopGenerationById",
     ];
     const api = Object.fromEntries(
       apiNames.map(name => [
         name,
-        name === "$" || name === "_"
-          ? scriptWindow[name]
-          : typeof scriptWindow[name] === "function"
-            ? Function.prototype.bind.call(scriptWindow[name], scriptWindow)
-            : scriptWindow[name],
+        typeof scriptWindow[name] === "function"
+          ? Function.prototype.bind.call(scriptWindow[name], scriptWindow)
+          : scriptWindow[name],
       ]),
+    );
+    const iframeEvents = Object.freeze(
+      Object.fromEntries(
+        [
+          "GENERATION_STARTED",
+          "STREAM_TOKEN_RECEIVED_FULLY",
+          "STREAM_TOKEN_RECEIVED_INCREMENTALLY",
+          "GENERATION_ENDED",
+        ].flatMap(name => {
+          const value = scriptWindow.iframe_events?.[name];
+          return typeof value === "string" && value ? [[name, value]] : [];
+        }),
+      ),
     );
 
     frame.__daoyuanFloatingBridge = {
       Mvu: mvuProxy,
       api,
+      iframeEvents,
       storage: sharedStatusStorage,
       getLatestMvuData: () => latestMvuData || readLatestMvuData(),
+      getCurrentMessageId: () => {
+        const messageId = getLatestAssistantMessageId();
+        return typeof messageId === "number" ? messageId : null;
+      },
       waitGlobalInitialized: async name => {
         if (name === "Mvu") return scriptWindow.Mvu;
         return scriptWindow.waitGlobalInitialized(name);
@@ -1779,6 +1859,7 @@ function floatingMvuRuntime(uiHtml, petAssets) {
         frame.style.display = "block";
       },
       fail: message => {
+        if (disposed) return;
         console.error("[道渊悬浮状态栏] 界面加载失败", message);
         showStatus(`道渊悬浮状态栏加载失败：${message}`, true);
       },
@@ -1884,4 +1965,4 @@ fs.writeFileSync(outputPath, JSON.stringify(output, null, 2), "utf8");
 if (fs.existsSync(legacyOutputPath)) {
   fs.rmSync(legacyOutputPath);
 }
-console.log(`Generated importable Tavern Helper script at ${outputPath}`);
+console.log(`[道渊构建] target=${buildTarget} generated=${outputPath}`);

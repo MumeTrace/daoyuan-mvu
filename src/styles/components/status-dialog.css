@@ -1,0 +1,170 @@
+.dy-status-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.86);
+  backdrop-filter: blur(6px);
+  box-sizing: border-box;
+}
+
+.dy-status-dialog {
+  --dialog-accent: var(--accent-gold);
+  --dialog-glow: var(--accent-gold-glow);
+  width: min(92vw, 420px);
+  max-height: min(86vh, 540px);
+  padding: 22px 24px 20px;
+  overflow: hidden;
+  border: 1px solid var(--dialog-accent);
+  border-radius: 12px;
+  outline: none;
+  background: linear-gradient(145deg, rgba(27, 18, 27, 0.99), rgba(13, 9, 15, 0.99));
+  box-shadow: 0 0 46px color-mix(in srgb, var(--dialog-accent) 24%, transparent), inset 0 0 22px rgba(255, 255, 255, 0.025);
+  color: var(--text-main);
+  text-align: center;
+  box-sizing: border-box;
+  animation: faction-pop 0.25s ease-out;
+}
+
+.dy-status-dialog-overlay--warning .dy-status-dialog,
+.dy-status-dialog-overlay--danger .dy-status-dialog {
+  --dialog-accent: var(--accent-blood);
+  --dialog-glow: var(--accent-blood-glow);
+  background: linear-gradient(145deg, rgba(28, 12, 18, 0.99), rgba(14, 7, 11, 0.99));
+}
+
+.dy-status-dialog--prompt {
+  width: min(92vw, 400px);
+  padding: 20px 22px 18px;
+}
+
+.dy-status-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding-bottom: 11px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.dy-status-dialog-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  place-items: center;
+  color: var(--dialog-accent);
+  font-size: 1.45em;
+  font-weight: 900;
+  text-shadow: 0 0 12px var(--dialog-glow);
+}
+
+.dy-status-dialog h2 {
+  margin: 0;
+  padding: 0;
+  color: var(--dialog-accent);
+  font-size: 1.14em;
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px var(--dialog-glow);
+}
+
+.dy-status-dialog-message {
+  max-height: 38vh;
+  margin: 16px 0;
+  overflow-y: auto;
+  color: var(--text-main);
+  font-size: 0.95em;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.dy-status-dialog-input {
+  width: 100%;
+  margin: -2px 0 16px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--dialog-accent) 45%, transparent);
+  border-radius: 7px;
+  outline: none;
+  background: rgba(0, 0, 0, 0.48);
+  color: var(--text-main);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.dy-status-dialog-input:focus {
+  border-color: var(--dialog-accent);
+  box-shadow: 0 0 10px var(--dialog-glow);
+}
+
+.dy-status-dialog-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: -2px 0 6px;
+  color: var(--text-dim);
+  font-size: 0.86em;
+  cursor: pointer;
+}
+
+.dy-status-dialog-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dialog-accent);
+  cursor: pointer;
+}
+
+.dy-status-dialog-checkbox-note {
+  margin: 0 0 16px;
+  color: var(--accent-mana);
+  font-size: 0.76em;
+  opacity: 0.82;
+}
+
+.dy-status-dialog-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.dy-status-dialog-actions button {
+  min-width: 104px;
+  padding: 9px 18px;
+  border-radius: 22px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dy-status-dialog-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+}
+
+.dy-status-dialog-confirm {
+  border: 1px solid var(--dialog-accent);
+  background: color-mix(in srgb, var(--dialog-accent) 26%, rgba(20, 12, 20, 0.95));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--dialog-accent) 32%, transparent);
+  color: var(--text-main);
+}
+
+.dy-status-dialog-overlay--warning .dy-status-dialog-confirm,
+.dy-status-dialog-overlay--danger .dy-status-dialog-confirm {
+  border-color: var(--accent-blood);
+  background: var(--accent-blood);
+  box-shadow: 0 0 15px var(--accent-blood-glow);
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .dy-status-dialog-overlay { padding: 8px; }
+  .dy-status-dialog { width: min(94vw, 420px); padding: 19px 15px 16px; }
+  .dy-status-dialog-actions { gap: 9px; }
+  .dy-status-dialog-actions button { min-width: 0; flex: 1; padding-inline: 10px; }
+}

@@ -1,4 +1,28 @@
+# Dependencies and generated build artifacts
 node_modules/
 dist/
-.DS_Store
+
+# Local scratch directories
+tmp/
+work/
+
+# Local environment and tool state
 *.local
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# Logs and coverage
+*.log
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+coverage/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini

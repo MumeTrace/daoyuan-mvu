@@ -1,79 +1,125 @@
-<script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, watch } from "vue";
-import { renderDaoyuanApplause } from "./applause.js";
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, watch, type ComponentPublicInstance } from "vue";
+import { tavernApi } from "../bridge/tavern-api";
+import { registerWindowExports } from "../bridge/window-exports";
+import { removeStatValue } from "../composables/useMvuWrite";
+import { useLoreSearch } from "../composables/useLoreSearch";
+import { asRecord } from "../stores/helpers";
+import { useStatusDialogStore } from "../stores/status-dialog";
+import { useUiStore } from "../stores/ui";
+import { usePortraitStore } from "../stores/portraits";
 import {
-  beautyForumState,
-  applyBeautyForumPreset,
   DEFAULT_BEAUTY_FORUM_REPLY_INSTRUCTION,
-  deleteBeautyForumPreset,
-  refreshBeautyForumPresets,
-  saveBeautyForumSettings,
-  saveBeautyForumPreset,
-  setBeautyForumStatus,
-} from "./beauty-forum-store.js";
+  useBeautyRankStore,
+} from "../stores/beauty-rank";
+import type { BeautyCard, BeautyForumFloor, BeautyForumFloorStatus } from "../stores/beauty-rank";
+import ApplauseButton from "./shared/ApplauseButton.vue";
+import PortraitDrawer from "./shared/PortraitDrawer.vue";
+import PortraitImage from "./shared/PortraitImage.vue";
 
-const portraitOpen = reactive({});
-const deleteTimers = new Map();
+const portraitOpen = reactive<Record<string, boolean>>({});
+const deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const threadLists = new Map<string, HTMLElement>();
+const ui = useUiStore();
+const statusDialog = useStatusDialogStore();
+const loreSearch = useLoreSearch();
+const portraits = usePortraitStore();
+const beautyForumState = useBeautyRankStore();
+let unregisterCompatibility: (() => void) | null = null;
+let bodyScrollLocked = false;
+let previousBodyOverflow = "";
+
+function setSettingsBodyScrollLock(locked: boolean): void {
+  if (typeof document === "undefined") return;
+  if (locked && !bodyScrollLocked) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    bodyScrollLocked = true;
+    return;
+  }
+  if (!locked && bodyScrollLocked) {
+    document.body.style.overflow = previousBodyOverflow;
+    bodyScrollLocked = false;
+  }
+}
+
+watch(
+  () => beautyForumState.settingsOpen,
+  settingsOpen => setSettingsBodyScrollLock(settingsOpen),
+  { immediate: true },
+);
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function setBeautyForumStatus(message: unknown, tone = "info"): void {
+  beautyForumState.setStatus(message, tone);
+}
 
 const cards = computed(() => beautyForumState.cards);
 const portraitRevision = computed(() => beautyForumState.portraitRevision);
 
-function hasPortrait(card) {
+function hasPortrait(card: BeautyCard): boolean {
   void portraitRevision.value;
   const name = String(card?.name || "");
   if (!name) return false;
   const gender = card?.data?.性别;
-  return Boolean(window.getPortraitUrl?.(name, gender));
+  return Boolean(portraits.getUrl(name, gender));
 }
 
-function portraitUrl(card) {
+function portraitUrl(card: BeautyCard): string {
   void portraitRevision.value;
   const name = String(card?.name || "");
   const gender = card?.data?.性别;
-  return window.getPortraitUrl?.(name, gender) || "";
+  return portraits.getUrl(name, gender);
 }
 
-function rankLabel(card, index) {
-  return card?.data?.排名 || index + 1;
+function rankLabel(card: BeautyCard, index: number): string {
+  return String(card.data.排名 || index + 1);
 }
 
-function threadFor(name) {
+function cardTitle(card: BeautyCard): string {
+  return String(card.data.头衔 || "");
+}
+
+function threadFor(name: unknown): BeautyForumFloor[] {
   const key = String(name || "");
   if (!beautyForumState.threads[key]) beautyForumState.threads[key] = [];
   return beautyForumState.threads[key];
 }
 
-function draftFor(name) {
+function draftFor(name: unknown): string {
   const key = String(name || "");
   if (beautyForumState.drafts[key] === undefined) beautyForumState.drafts[key] = "";
   return beautyForumState.drafts[key];
 }
 
-function isExpanded(name) {
+function isExpanded(name: unknown): boolean {
   return beautyForumState.expanded[String(name || "")] !== false;
 }
 
-function isDeleteArmed(name) {
+function isDeleteArmed(name: unknown): boolean {
   return beautyForumState.deleteArmed[String(name || "")] === true;
 }
 
-function setDeleteArmed(name, value) {
+function setDeleteArmed(name: unknown, value: unknown): void {
   beautyForumState.deleteArmed[String(name || "")] = Boolean(value);
 }
 
-function setExpanded(name, value) {
+function setExpanded(name: unknown, value: unknown): void {
   beautyForumState.expanded[String(name || "")] = Boolean(value);
 }
 
-function toggleThread(name) {
+function toggleThread(name: unknown): void {
   setExpanded(name, !isExpanded(name));
 }
 
-function cardFloorCount(name) {
+function cardFloorCount(name: unknown): number {
   return threadFor(name).length;
 }
 
-function floorTime(floor) {
+function floorTime(floor: BeautyForumFloor): string {
   if (floor?.time) return floor.time;
   if (!floor?.createdAt) return "";
   const date = new Date(floor.createdAt);
@@ -84,21 +130,26 @@ function floorTime(floor) {
   });
 }
 
-function formatNowTime() {
+function formatNowTime(): string {
   const date = new Date();
   return `${String(date.getHours()).padStart(2, "0")}:${String(
     date.getMinutes(),
   ).padStart(2, "0")}`;
 }
 
-function nextForumFloor(thread) {
+function nextForumFloor(thread: BeautyForumFloor[]): number {
   return (
     thread.reduce((maxFloor, floor) => Math.max(maxFloor, Number(floor.floor) || 0), 0) +
     1
   );
 }
 
-function createForumFloor(content, floor, replyTo = null, status = "done") {
+function createForumFloor(
+  content: string,
+  floor: number,
+  replyTo: number | null = null,
+  status: BeautyForumFloorStatus = "done",
+): BeautyForumFloor {
   return {
     id: `forum_${Date.now()}_${Math.floor(Math.random() * 1000)}_${floor}`,
     content,
@@ -113,29 +164,25 @@ function createForumFloor(content, floor, replyTo = null, status = "done") {
   };
 }
 
-function escapeSelectorValue(value) {
-  if (window.CSS && typeof window.CSS.escape === "function") {
-    return window.CSS.escape(String(value || ""));
-  }
-  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+function setThreadListRef(name: string, element: Element | ComponentPublicInstance | null): void {
+  if (element instanceof HTMLElement) threadLists.set(name, element);
+  else threadLists.delete(name);
 }
 
-async function scrollThreadToBottom(name) {
+async function scrollThreadToBottom(name: unknown): Promise<void> {
   await nextTick();
-  const selector = `[data-beauty="${escapeSelectorValue(name)}"]`;
-  const card = document.querySelector(selector);
-  const list = card?.querySelector(".forum-thread-list");
+  const list = threadLists.get(String(name || ""));
   if (list) {
     list.scrollTop = list.scrollHeight;
   }
 }
 
-function togglePortrait(name) {
+function togglePortrait(name: unknown): void {
   const key = String(name || "");
   portraitOpen[key] = !portraitOpen[key];
 }
 
-function syncPortraitState() {
+function syncPortraitState(): void {
   cards.value.forEach((card) => {
     const key = String(card.name || "");
     if (!key) return;
@@ -154,7 +201,7 @@ function syncPortraitState() {
   });
 }
 
-function refreshPortraitConsumers() {
+function refreshPortraitConsumers(): void {
   beautyForumState.portraitRevision += 1;
 }
 
@@ -163,25 +210,17 @@ watch(
     cards.value
       .map((card) => `${card.name}:${card.data?.排名 || ""}:${card.data?.性别 || ""}`)
       .join("|"),
-  async () => {
+  () => {
     syncPortraitState();
-    await nextTick();
-    if (typeof window.injectPortraitDrawers === "function") {
-      window.injectPortraitDrawers();
-    }
   },
   { immediate: true },
 );
 
-watch(portraitRevision, async () => {
+watch(portraitRevision, () => {
   syncPortraitState();
-  await nextTick();
-  if (typeof window.injectPortraitDrawers === "function") {
-    window.injectPortraitDrawers();
-  }
 });
 
-function normalizeApiRoot(url) {
+function normalizeApiRoot(url: unknown): string {
   let root = String(url || "").trim();
   if (!root) return "";
   root = root.replace(/\/chat\/completions\/?$/i, "");
@@ -190,14 +229,14 @@ function normalizeApiRoot(url) {
   return root;
 }
 
-function normalizeChatEndpoint(url) {
+function normalizeChatEndpoint(url: unknown): string {
   const root = normalizeApiRoot(url);
   if (!root) return "";
   return `${root}/chat/completions`;
 }
 
-function buildThreadHistory(floors, skipId) {
-  const lines = [];
+function buildThreadHistory(floors: BeautyForumFloor[], skipId?: string): string {
+  const lines: string[] = [];
   const visibleFloors = skipId
     ? floors.filter((floor) => floor.id !== skipId)
     : floors;
@@ -211,7 +250,12 @@ function buildThreadHistory(floors, skipId) {
   return lines.join("\n");
 }
 
-function buildForumCommentPrompt(card, userMessage, floors, skipId) {
+function buildForumCommentPrompt(
+  card: BeautyCard,
+  userMessage: unknown,
+  floors: BeautyForumFloor[],
+  skipId?: string,
+): string {
   const settings = beautyForumState.settings || {};
   const replyInstruction =
     String(settings.replyInstruction || "").trim() ||
@@ -240,7 +284,7 @@ function buildForumCommentPrompt(card, userMessage, floors, skipId) {
   return prompt;
 }
 
-function cleanForumReply(rawReply) {
+function cleanForumReply(rawReply: unknown): string {
   let extracted = String(rawReply || "");
   extracted = extracted.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   const replyMatch =
@@ -254,7 +298,12 @@ function cleanForumReply(rawReply) {
   return extracted || "这位道友敲了半天，最后只憋出一声冷笑。";
 }
 
-async function callForumGenerateReply(card, userMessage, floors, floorId) {
+async function callForumGenerateReply(
+  card: BeautyCard,
+  userMessage: string,
+  floors: BeautyForumFloor[],
+  floorId: string,
+): Promise<string> {
   const settings = beautyForumState.settings || {};
   const systemPrompt = buildForumCommentPrompt(
     card,
@@ -278,7 +327,7 @@ async function callForumGenerateReply(card, userMessage, floors, floorId) {
         : 0.85,
       max_tokens: 500,
     };
-    const headers = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`;
 
     const response = await fetch(endpoint, {
@@ -290,19 +339,22 @@ async function callForumGenerateReply(card, userMessage, floors, floorId) {
       const text = await response.text();
       throw new Error(`API 请求失败: ${response.status} - ${text}`);
     }
-    const data = await response.json();
+    const data = asRecord(await response.json());
+    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const firstChoice = asRecord(choices[0]);
+    const message = asRecord(firstChoice.message);
     const content =
-      data?.choices?.[0]?.message?.content ??
-      data?.choices?.[0]?.text ??
-      data?.reply ??
-      data?.text ??
+      message.content ??
+      firstChoice.text ??
+      data.reply ??
+      data.text ??
       "";
     return cleanForumReply(content);
   }
 
-  if (typeof window.generate === "function") {
+  if (tavernApi.has("generate")) {
     const combinedPrompt = `${systemPrompt}\n\n请发表一段评论`;
-    const rawReply = await window.generate({
+    const rawReply = await tavernApi.generate({
       user_input: combinedPrompt,
       should_stream: false,
       max_chat_history: 15,
@@ -310,8 +362,9 @@ async function callForumGenerateReply(card, userMessage, floors, floorId) {
 
     if (typeof rawReply === "string") return cleanForumReply(rawReply);
     if (rawReply && typeof rawReply === "object") {
+      const replyRecord = asRecord(rawReply);
       return cleanForumReply(
-        rawReply.text || rawReply.reply || rawReply.content || "",
+        replyRecord.text || replyRecord.reply || replyRecord.content || "",
       );
     }
     return cleanForumReply(String(rawReply || ""));
@@ -320,7 +373,7 @@ async function callForumGenerateReply(card, userMessage, floors, floorId) {
   throw new Error("未找到可用的回复生成接口");
 }
 
-async function fetchApiModels() {
+async function fetchApiModels(): Promise<void> {
   const base = normalizeApiRoot(beautyForumState.settings.apiBaseUrl);
   if (!base) {
     setBeautyForumStatus("请先填写基础 URL 再获取模型。", "warn");
@@ -328,7 +381,7 @@ async function fetchApiModels() {
   }
   try {
     setBeautyForumStatus("正在获取模型列表...", "info");
-    const headers = {};
+    const headers: Record<string, string> = {};
     if (beautyForumState.settings.apiKey) {
       headers.Authorization = `Bearer ${beautyForumState.settings.apiKey}`;
     }
@@ -336,47 +389,50 @@ async function fetchApiModels() {
     if (!response.ok) {
       throw new Error(`模型列表请求失败: ${response.status}`);
     }
-    const data = await response.json();
-    const models = Array.isArray(data?.data)
+    const data = asRecord(await response.json());
+    const models = Array.isArray(data.data)
       ? data.data
-          .map((item) => item?.id || item?.name)
-          .filter((item) => typeof item === "string" && item.trim())
+          .map((item) => {
+            const model = asRecord(item);
+            return model.id || model.name;
+          })
+          .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
       : [];
     beautyForumState.modelOptions = models;
     if (models.length > 0 && !beautyForumState.settings.apiModel) {
-      beautyForumState.settings.apiModel = models[0];
+      beautyForumState.settings.apiModel = models[0]!;
     }
     setBeautyForumStatus(
       models.length > 0 ? "模型列表已更新。" : "未获取到可用模型。",
       models.length > 0 ? "success" : "warn",
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[道渊] 获取绝色榜回帖模型失败:", error);
-    setBeautyForumStatus(`获取模型失败：${error.message}`, "error");
+    setBeautyForumStatus(`获取模型失败：${errorMessage(error)}`, "error");
   }
 }
 
-function saveSettings() {
-  saveBeautyForumSettings(beautyForumState.settings);
+function saveSettings(): void {
+  beautyForumState.saveSettings(beautyForumState.settings);
   setBeautyForumStatus("绝色榜回帖设定已保存。", "success");
 }
 
-function openSettings() {
-  refreshBeautyForumPresets();
+function openSettings(): void {
+  beautyForumState.refreshPresets();
   beautyForumState.settingsOpen = true;
 }
 
-function closeSettings() {
+function closeSettings(): void {
   beautyForumState.settingsOpen = false;
 }
 
-function applySelectedPreset() {
+function applySelectedPreset(): void {
   const presetName = String(beautyForumState.settingsPresetName || "").trim();
   if (!presetName) {
     setBeautyForumStatus("请先选择一个绝色榜回帖预设。", "warn");
     return;
   }
-  const applied = applyBeautyForumPreset(presetName);
+  const applied = beautyForumState.applyPreset(presetName);
   if (!applied) {
     setBeautyForumStatus(`预设【${presetName}】不存在。`, "error");
     return;
@@ -384,40 +440,48 @@ function applySelectedPreset() {
   setBeautyForumStatus(`已应用预设【${presetName}】。`, "success");
 }
 
-function saveCurrentAsPreset() {
+async function saveCurrentAsPreset(): Promise<void> {
   const fallbackName = String(beautyForumState.settingsPresetName || "").trim();
-  const presetName = window.prompt("请输入绝色榜回帖预设名称：", fallbackName || "");
+  const presetName = await statusDialog.prompt(
+    "请输入绝色榜回帖预设名称：",
+    fallbackName,
+    { title: "保存回帖预设", confirmText: "保存" },
+  );
   if (presetName === null) return;
   const trimmed = String(presetName || "").trim();
   if (!trimmed) {
     setBeautyForumStatus("预设名称不能为空。", "warn");
     return;
   }
-  if (!saveBeautyForumPreset(trimmed, beautyForumState.settings)) {
+  if (!beautyForumState.savePreset(trimmed, beautyForumState.settings)) {
     setBeautyForumStatus("保存预设失败。", "error");
     return;
   }
-  refreshBeautyForumPresets();
+  beautyForumState.refreshPresets();
   beautyForumState.settingsPresetName = trimmed;
   setBeautyForumStatus(`已保存预设【${trimmed}】。`, "success");
 }
 
-function deleteSelectedPreset() {
+async function deleteSelectedPreset(): Promise<void> {
   const presetName = String(beautyForumState.settingsPresetName || "").trim();
   if (!presetName) {
     setBeautyForumStatus("请先选择一个要删除的绝色榜预设。", "warn");
     return;
   }
-  if (!confirm(`确定要删除绝色榜预设【${presetName}】吗？`)) return;
-  if (!deleteBeautyForumPreset(presetName)) {
+  const accepted = await statusDialog.confirm(
+    `确定要删除绝色榜预设【${presetName}】吗？`,
+    { title: "删除回帖预设", confirmText: "确认删除", tone: "danger" },
+  );
+  if (!accepted) return;
+  if (!beautyForumState.deletePreset(presetName)) {
     setBeautyForumStatus(`预设【${presetName}】不存在。`, "error");
     return;
   }
-  refreshBeautyForumPresets();
+  beautyForumState.refreshPresets();
   setBeautyForumStatus(`预设【${presetName}】已删除。`, "success");
 }
 
-function toggleLike(floor) {
+function toggleLike(floor: BeautyForumFloor): void {
   if (!floor) return;
   if (floor.liked) {
     floor.liked = false;
@@ -428,15 +492,19 @@ function toggleLike(floor) {
   }
 }
 
-function deleteFloor(cardName, floorId) {
+async function deleteFloor(cardName: string, floorId: string): Promise<void> {
   const thread = threadFor(cardName);
   const index = thread.findIndex((item) => item.id === floorId);
   if (index < 0) return;
-  if (!confirm("确定删除这层回帖吗？")) return;
+  const accepted = await statusDialog.confirm(
+    "确定删除这层回帖吗？",
+    { title: "删除回帖", confirmText: "确认删除", tone: "danger" },
+  );
+  if (!accepted) return;
   thread.splice(index, 1);
 }
 
-async function retryFloor(card, floor) {
+async function retryFloor(card: BeautyCard, floor?: BeautyForumFloor): Promise<void> {
   if (!card || !floor) return;
   if (beautyForumState.generatingName) {
     setBeautyForumStatus("正在生成其他回帖，请稍后再试。", "warn");
@@ -462,9 +530,9 @@ async function retryFloor(card, floor) {
     floor.time = formatNowTime();
     floor.status = "done";
     await scrollThreadToBottom(card.name);
-  } catch (error) {
+  } catch (error: unknown) {
     floor.status = "error";
-    floor.error = error?.message || String(error);
+    floor.error = errorMessage(error);
     setBeautyForumStatus(`回帖生成失败：${floor.error}`, "error");
     await scrollThreadToBottom(card.name);
   } finally {
@@ -472,7 +540,7 @@ async function retryFloor(card, floor) {
   }
 }
 
-async function submitReply(card) {
+async function submitReply(card: BeautyCard): Promise<void> {
   if (!card?.name) return;
   if (beautyForumState.generatingName) {
     setBeautyForumStatus("正在生成其他回帖，请稍后再试。", "warn");
@@ -482,7 +550,7 @@ async function submitReply(card) {
   const key = String(card.name || "");
   const draft = String(draftFor(key) || "").trim();
   if (!draft) {
-    window.alert?.("回帖内容不能为空！");
+    await statusDialog.showAlert("回帖内容不能为空！", { title: "回帖提示", tone: "warning" });
     return;
   }
 
@@ -512,9 +580,9 @@ async function submitReply(card) {
     aiFloor.status = "done";
     setBeautyForumStatus(`【${key}】回帖已生成。`, "success");
     await scrollThreadToBottom(key);
-  } catch (error) {
+  } catch (error: unknown) {
     aiFloor.status = "error";
-    aiFloor.error = error?.message || String(error);
+    aiFloor.error = errorMessage(error);
     setBeautyForumStatus(`回帖生成失败：${aiFloor.error}`, "error");
     await scrollThreadToBottom(key);
   } finally {
@@ -522,21 +590,21 @@ async function submitReply(card) {
   }
 }
 
-function onDraftKeydown(card, event) {
+function onDraftKeydown(card: BeautyCard, event: KeyboardEvent): void {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     submitReply(card);
   }
 }
 
-function resizeReplyInput(event) {
-  const target = event?.target;
-  if (!target) return;
+function resizeReplyInput(event: Event): void {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) return;
   target.style.height = "auto";
   target.style.height = `${target.scrollHeight}px`;
 }
 
-function armDeleteBeauty(card) {
+function armDeleteBeauty(card: BeautyCard): void {
   const name = String(card?.name || "");
   if (!name) return;
   if (!isDeleteArmed(name)) {
@@ -559,77 +627,55 @@ function armDeleteBeauty(card) {
   deleteBeautyEntry(card.name);
 }
 
-async function deleteBeautyEntry(name) {
+async function deleteBeautyEntry(name: string): Promise<void> {
   try {
-    const lastMsgId = window.getLastMessageId?.();
-    if (!lastMsgId) return;
-    const messages = window.getChatMessages?.(`0-${lastMsgId}`, {
-      role: "assistant",
-    });
-    if (!messages || messages.length === 0) return;
-    const targetMsgId = messages[messages.length - 1].message_id;
-
-    if (window.Mvu && typeof window.Mvu.replaceMvuData === "function") {
-      const fullData = window.Mvu.getMvuData({
-        type: "message",
-        message_id: targetMsgId,
-      });
-      if (fullData?.stat_data?.绝色榜?.[name]) {
-        delete fullData.stat_data.绝色榜[name];
-        await window.Mvu.replaceMvuData(fullData, {
-          type: "message",
-          message_id: targetMsgId,
-        });
-        await window.notifyDaoyuanMvuChanged(fullData);
-      }
-    }
-  } catch (error) {
+    await removeStatValue(["绝色榜", name]);
+  } catch (error: unknown) {
     console.error("[道渊] 删除绝色榜条目失败:", name, error);
-    window.alert?.(`删除失败：${error.message || error}`);
+    await statusDialog.showAlert(`删除失败：${errorMessage(error)}`, { title: "删除失败", tone: "danger" });
   }
 }
 
-function openThreadSettings() {
+function openThreadSettings(): void {
   openSettings();
 }
 
-function showLoreByName(name) {
-  window.showLoreByName?.(name);
+function showLoreByName(name: string): void {
+  void loreSearch.openCharacterLore(name);
 }
 
-function showMissingPortraitDialog(name) {
-  window.showMissingPortraitDialog?.(name);
+function showMissingPortraitDialog(name: string): void {
+  ui.openMissingPortrait(name);
 }
 
-function openCustomPortraitDialog(name) {
-  window.openCustomPortraitDialog?.(name);
+function openCustomPortraitDialog(name: string): void {
+  ui.openPortraitEditor(name);
 }
 
-function switchPortrait(name) {
-  window.switchPortrait?.(name);
+function switchPortrait(name: string): void {
+  portraits.cycle(name);
 }
 
-function closeStatusMessage() {
+function closeStatusMessage(): void {
   beautyForumState.statusMessage = "";
   beautyForumState.statusTone = "info";
 }
 
 onMounted(async () => {
-  window.addEventListener("daoyuan_portraits_changed", refreshPortraitConsumers);
+  globalThis.addEventListener("daoyuan_portraits_changed", refreshPortraitConsumers);
   await nextTick();
-  refreshBeautyForumPresets();
-  if (typeof window.injectPortraitDrawers === "function") {
-    window.injectPortraitDrawers();
-  }
+  beautyForumState.refreshPresets();
+  unregisterCompatibility = registerWindowExports({ fetchBeautyForumModels: fetchApiModels });
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("daoyuan_portraits_changed", refreshPortraitConsumers);
+  setSettingsBodyScrollLock(false);
+  globalThis.removeEventListener("daoyuan_portraits_changed", refreshPortraitConsumers);
   deleteTimers.forEach((timer) => clearTimeout(timer));
   deleteTimers.clear();
+  threadLists.clear();
+  unregisterCompatibility?.();
 });
-
-window.fetchBeautyForumModels = fetchApiModels;
 </script>
 
 <template>
@@ -676,57 +722,60 @@ window.fetchBeautyForumModels = fetchApiModels;
             {{ isDeleteArmed(card.name) ? "删除?" : "✕" }}
           </button>
           <span
-            v-if="card.data?.头衔"
+            v-if="cardTitle(card)"
             class="beauty-forum-title-badge"
-            :title="card.data.头衔"
+            :title="cardTitle(card)"
           >
-            {{ card.data.头衔 }}
+            {{ cardTitle(card) }}
           </span>
         </div>
 
         <div class="info-text beauty-forum-copy">
           <b>倾世仙姿：</b>
-          <span style="color:#dcdde1">{{ card.data?.仙姿 || "暂无描述" }}</span>
+          <span class="beauty-description">{{ card.data?.仙姿 || "暂无描述" }}</span>
           <br /><br />
           <b>坊间群芳谱：</b>
-          <i style="font-size:0.9em; color:#bbb;">"{{ card.data?.群芳谱 || "暂无描述" }}"</i>
+          <i class="beauty-rumor">"{{ card.data?.群芳谱 || "暂无描述" }}"</i>
         </div>
 
         <div class="portrait-wrapper">
           <div class="portrait-actions">
             <div class="beauty-forum-primary-actions">
-              <div
+              <button
                 v-if="hasPortrait(card)"
                 class="portrait-toggle-btn"
+                type="button"
                 @click.stop="togglePortrait(card.name)"
               >
                 {{ portraitOpen[card.name] ? "收起立绘 ▲" : "查看立绘 ▼" }}
-              </div>
-              <div
+              </button>
+              <button
                 v-else
-                class="portrait-toggle-btn"
-                style="opacity:0.75;"
+                class="portrait-toggle-btn portrait-toggle-missing"
+                type="button"
                 title="配置或获取角色立绘"
                 @click.stop="showMissingPortraitDialog(card.name)"
               >
                 暂无立绘
-              </div>
+              </button>
 
-              <div
+              <button
                 class="portrait-custom-btn"
+                type="button"
                 title="设置立绘"
                 @click.stop="openCustomPortraitDialog(card.name)"
               >
                 🎨
-              </div>
-              <div
+              </button>
+              <button
                 class="portrait-custom-btn"
+                type="button"
                 title="切换立绘"
                 @click.stop="switchPortrait(card.name)"
               >
                 🔄
-              </div>
-              <span class="forum-applause" v-html="renderDaoyuanApplause(card.name)"></span>
+              </button>
+              <span class="forum-applause"><ApplauseButton :name="card.name" /></span>
             </div>
             <div class="beauty-forum-secondary-actions">
               <button
@@ -739,20 +788,24 @@ window.fetchBeautyForumModels = fetchApiModels;
                 <span>回帖</span>
                 <span class="forum-thread-caret">{{ isExpanded(card.name) ? "▲" : "▼" }}</span>
               </button>
-              <div class="beauty-forum-drawer-slot"></div>
+              <div class="beauty-forum-drawer-slot">
+                <PortraitDrawer :name="card.name" :opens-up="!portraitOpen[card.name]" />
+              </div>
             </div>
           </div>
 
           <div v-if="hasPortrait(card)" class="large-portrait" :class="{ show: portraitOpen[card.name] }">
-            <img
+            <PortraitImage
               :src="portraitOpen[card.name] ? portraitUrl(card) : ''"
               :alt="card.name"
+              :retry-key="portraitRevision"
+              fallback-label="立绘加载失败"
+              @activate="ui.openImageModal(portraitUrl(card))"
             />
           </div>
           <div
             v-else
-            class="large-portrait"
-            style="display:none;align-items:center;justify-content:center;min-height:100px;color:var(--text-dim);font-size:0.85em;"
+            class="large-portrait beauty-no-portrait-placeholder"
           >
             点击「🎨 自定义」上传本地图片
           </div>
@@ -775,7 +828,7 @@ window.fetchBeautyForumModels = fetchApiModels;
             暂无回帖，发表首评
           </div>
 
-          <div v-else class="forum-thread-list">
+          <div v-else :ref="(element) => setThreadListRef(card.name, element)" class="forum-thread-list">
             <article
               v-for="(floor, floorIndex) in threadFor(card.name)"
               :key="floor.id"
@@ -835,18 +888,19 @@ window.fetchBeautyForumModels = fetchApiModels;
       </article>
     </div>
 
-    <div
-      v-if="beautyForumState.settingsOpen"
-      class="forum-settings-overlay"
-      @click.self="closeSettings"
-    >
-      <div class="forum-settings-modal">
+    <Teleport to="body">
+      <div
+        v-if="beautyForumState.settingsOpen"
+        class="forum-settings-overlay"
+        @click.self="closeSettings"
+      >
+        <div class="forum-settings-modal" role="dialog" aria-modal="true" aria-label="绝色榜回帖设定">
         <div class="forum-settings-head">
           <div class="forum-settings-title">绝色榜回帖设定</div>
           <button class="forum-settings-close" type="button" @click="closeSettings">×</button>
         </div>
 
-        <div class="forum-settings-body">
+        <div class="forum-settings-body" tabindex="0">
           <div class="forum-settings-section">
             <div class="forum-settings-section-title">预设配置方案</div>
             <div class="forum-preset-row">
@@ -946,8 +1000,9 @@ window.fetchBeautyForumModels = fetchApiModels;
             <button class="forum-panel-btn primary" type="button" @click="saveSettings">保存</button>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1100,6 +1155,28 @@ window.fetchBeautyForumModels = fetchApiModels;
 
 .beauty-forum-copy {
   line-height: 1.65;
+}
+
+.beauty-description {
+  color: #dcdde1;
+}
+
+.beauty-rumor {
+  color: #bbb;
+  font-size: 0.9em;
+}
+
+.portrait-toggle-missing {
+  opacity: 0.75;
+}
+
+.beauty-no-portrait-placeholder {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  color: var(--text-dim);
+  font-size: 0.85em;
 }
 
 .forum-panel {
@@ -1370,14 +1447,17 @@ window.fetchBeautyForumModels = fetchApiModels;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(6px);
 }
 
 .forum-settings-modal {
-  width: min(520px, 100%);
-  max-height: min(88vh, 760px);
+  width: min(480px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  max-height: min(620px, calc(100dvh - 24px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1391,20 +1471,20 @@ window.fetchBeautyForumModels = fetchApiModels;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 9px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .forum-settings-title {
   flex: 1;
   color: var(--accent-gold);
-  font-size: 0.98em;
+  font-size: 0.92em;
   font-weight: 700;
 }
 
 .forum-settings-close {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   color: var(--text-dim);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1414,14 +1494,35 @@ window.fetchBeautyForumModels = fetchApiModels;
 
 .forum-settings-body {
   flex: 1;
-  overflow: auto;
-  padding: 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 11px 12px;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 193, 136, 0.5) transparent;
+}
+
+.forum-settings-body::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.forum-settings-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.forum-settings-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(216, 193, 136, 0.5);
 }
 
 .forum-settings-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .forum-settings-section + .forum-settings-section {
@@ -1432,29 +1533,29 @@ window.fetchBeautyForumModels = fetchApiModels;
 
 .forum-settings-section-title {
   color: var(--accent-gold);
-  font-size: 0.92em;
+  font-size: 0.86em;
   font-weight: 700;
 }
 
 .forum-settings-section-hint {
   color: var(--text-dim);
-  font-size: 0.8em;
-  line-height: 1.5;
+  font-size: 0.76em;
+  line-height: 1.4;
 }
 
 .forum-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   color: var(--text-dim);
-  font-size: 0.82em;
+  font-size: 0.78em;
 }
 
 .forum-field input,
 .forum-field textarea,
 .forum-model-select {
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 9px;
   color: var(--text-main);
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1476,7 +1577,7 @@ window.fetchBeautyForumModels = fetchApiModels;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px 14px;
+  padding: 9px 12px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1557,6 +1658,16 @@ window.fetchBeautyForumModels = fetchApiModels;
 }
 
 @media (max-width: 640px) {
+  .forum-settings-overlay {
+    padding: 8px;
+  }
+
+  .forum-settings-modal {
+    width: calc(100vw - 16px);
+    max-height: min(620px, calc(100vh - 16px));
+    max-height: min(620px, calc(100dvh - 16px));
+  }
+
   .forum-settings-foot {
     flex-direction: column;
     align-items: stretch;

@@ -1,0 +1,22 @@
+:root {
+  --bg-dark: #050406;
+  --bg-panel: rgba(26, 24, 29, 0.75);
+  --border-metal: #5a3d3d;
+  --accent-blood: #ff4d4d;
+  --accent-blood-glow: rgba(255, 77, 77, 0.5);
+  --accent-mana: #4da6ff;
+  --accent-mana-glow: rgba(77, 166, 255, 0.5);
+  --accent-gold: #ffd700;
+  --accent-gold-glow: rgba(255, 215, 0, 0.3);
+  --accent-exp: #ff9f43;
+  --accent-san: #2ed573;
+  --text-main: #f1f2f6;
+  --text-dim: #a4b0be;
+  --rare-text: #d980fa;
+  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+
+  /* Namespaced structural tokens for new component styles. */
+  --dy-stat-bar-height: 8px;
+  --dy-card-border-radius: 8px;
+  --dy-card-spacing: 10px;
+}
