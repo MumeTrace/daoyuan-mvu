@@ -126,12 +126,12 @@
     "uid": "sheet_world",
     "name": "世界状态表",
     "sourceData": {
-      "note": "【已初始化单例表·最高优先级硬规则】\n- world_state在开局模板中已经存在唯一数据行（row_id=1 且 global_key='全局'），当前任务是更新而不是初始化。\n- 任何回合都禁止对 world_state 输出 INSERT、INSERT OR REPLACE、REPLACE 或 UPSERT。\n- world_state只能输出带唯一键 WHERE 的 UPDATE；没有字段变化时不输出本表SQL。\n- 唯一允许的语句形态：UPDATE world_state SET cur_time=..., cur_location=..., crisis_level=..., events_json=... WHERE global_key='全局';\n- 输出 <tableEdit> 前必须扫描自己的SQL；如出现“INSERT INTO world_state”，必须删除并改写为上述 UPDATE。\n- events_json 必须是可被 JSON.parse 解析的JSON对象字符串，例如 '{}' 或 '{\"摘要\":\"宗门大典正在筹备\"}'；禁止写普通文本“当前动向详见动向表”。\n世界状态表。全表固定一条世界状态记录。\n当前时间格式“元会历·3726年·12月23日·15点45分”；使用时辰时不得同时写入矛盾的现代时刻。当前地点必须包含层级和环境描述；危机程度仅为无、低、中、高或致命。\n详细动向只记录于动向表；本表的“动向”仅保留简短摘要。\n【SQLite SQL填写】\n- 响应继续放在 <tableEdit> 标签内，标签内部只输出标准 INSERT/UPDATE/DELETE SQL。\n- UPDATE 与 DELETE 必须带 WHERE；优先使用 DDL 中的 UNIQUE 业务键定位。\n- SQL 字符串中的英文单引号必须写成两个单引号，禁止在语句后追加解释或 Markdown。",
+      "note": "【已初始化单例表·最高优先级硬规则】\n- world_state在开局模板中已经存在唯一数据行（row_id=1 且 global_key='全局'），当前任务是更新而不是初始化。\n- 任何回合都禁止对 world_state 输出 INSERT、INSERT OR REPLACE、REPLACE 或 UPSERT。\n- world_state只能输出带唯一键 WHERE 的 UPDATE；没有字段变化时不输出本表SQL。\n- 唯一允许的语句形态：UPDATE world_state SET cur_time=..., cur_location=..., crisis_level=..., encounter_cooldown=..., events_json=... WHERE global_key='全局';\n- 输出 <tableEdit> 前必须扫描自己的SQL；如出现“INSERT INTO world_state”，必须删除并改写为上述 UPDATE。\n- encounter_cooldown 记录距离下次遭遇还剩多少轮，只能填写不小于0的整数；每轮按剧情实际进展更新。\n- events_json 必须是可被 JSON.parse 解析的JSON对象字符串，例如 '{}' 或 '{\"摘要\":\"宗门大典正在筹备\"}'；禁止写普通文本“当前动向详见动向表”。\n世界状态表。全表固定一条世界状态记录。\n当前时间格式“元会历·3726年·12月23日·15点45分”；使用时辰时不得同时写入矛盾的现代时刻。当前地点必须包含层级和环境描述；危机程度仅为无、低、中、高或致命。\n详细动向只记录于动向表；本表的“动向”仅保留简短摘要。\n【SQLite SQL填写】\n- 响应继续放在 <tableEdit> 标签内，标签内部只输出标准 INSERT/UPDATE/DELETE SQL。\n- UPDATE 与 DELETE 必须带 WHERE；优先使用 DDL 中的 UNIQUE 业务键定位。\n- SQL 字符串中的英文单引号必须写成两个单引号，禁止在语句后追加解释或 Markdown。",
       "initNode": "已由开局模板插入 row_id=1、global_key='全局'的唯一记录；自动填表阶段禁止再次初始化。",
       "deleteNode": "禁止 DELETE 世界状态记录。",
-      "updateNode": "只允许 UPDATE world_state SET ... WHERE global_key='全局'; 更新时间、地点、危机程度与JSON动向摘要。",
+      "updateNode": "只允许 UPDATE world_state SET ... WHERE global_key='全局'; 更新时间、地点、危机程度、遭遇冷却与JSON动向摘要。",
       "insertNode": "绝对禁止 INSERT、INSERT OR REPLACE、REPLACE 或 UPSERT；开局模板已有唯一世界状态行。",
-      "ddl": "CREATE TABLE world_state (\n  row_id INTEGER PRIMARY KEY, -- 行号\n  global_key TEXT NOT NULL DEFAULT '全局' UNIQUE, -- 全局键\n  cur_time TEXT NOT NULL DEFAULT '未知', -- 当前时间\n  cur_location TEXT NOT NULL DEFAULT '未知', -- 当前地点\n  crisis_level TEXT NOT NULL DEFAULT '无', -- 危机程度\n  events_json TEXT NOT NULL DEFAULT '{}' -- 动向\n);"
+      "ddl": "CREATE TABLE world_state (\n  row_id INTEGER PRIMARY KEY, -- 行号\n  global_key TEXT NOT NULL DEFAULT '全局' UNIQUE, -- 全局键\n  cur_time TEXT NOT NULL DEFAULT '未知', -- 当前时间\n  cur_location TEXT NOT NULL DEFAULT '未知', -- 当前地点\n  crisis_level TEXT NOT NULL DEFAULT '无', -- 危机程度\n  encounter_cooldown INTEGER NOT NULL DEFAULT 0, -- 遭遇冷却\n  events_json TEXT NOT NULL DEFAULT '{}' -- 动向\n);"
     },
     "content": [
       [
@@ -140,6 +140,7 @@
         "当前时间",
         "当前地点",
         "危机程度",
+        "遭遇冷却",
         "动向"
       ],
       [
@@ -148,6 +149,7 @@
         "未知",
         "未知",
         "无",
+        0,
         "{}"
       ]
     ],

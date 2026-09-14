@@ -4,6 +4,7 @@ import { usePortraitPool } from "../../composables/usePortraitPool";
 import { useUiStore } from "../../stores/ui";
 import ApplauseButton from "./ApplauseButton.vue";
 import PortraitDrawer from "./PortraitDrawer.vue";
+import PortraitImage from "./PortraitImage.vue";
 
 const props = defineProps<{
   name: string;
@@ -48,7 +49,13 @@ function openImage(): void {
       <PortraitDrawer :name="name" :opens-up="!expanded" @selected="pool.refresh" />
     </div>
     <div v-if="portraitUrl" class="large-portrait" :class="{ show: expanded }">
-      <img :src="expanded ? portraitUrl : undefined" :data-src="portraitUrl" :alt="name" @click="openImage" />
+      <PortraitImage
+        :src="expanded ? portraitUrl : ''"
+        :alt="name"
+        :retry-key="pool.revision.value"
+        fallback-label="立绘加载失败"
+        @activate="openImage"
+      />
     </div>
     <div v-else class="large-portrait dy-missing-portrait">
       点击「🎨」上传本地图片

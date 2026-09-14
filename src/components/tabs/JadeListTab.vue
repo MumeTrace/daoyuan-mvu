@@ -8,6 +8,7 @@ import { useStatusDialogStore } from "../../stores/status-dialog";
 import type { DataRecord } from "../../types/stat-data";
 import JadeChatView from "./JadeChatView.vue";
 import { text } from "./view-helpers";
+import PortraitImage from "../shared/PortraitImage.vue";
 
 const jade = useJadeStore();
 const ui = useUiStore();
@@ -93,14 +94,16 @@ watch(
     >
       <div class="wx-unread-dot" :class="{ show: contactPreview(name, data).unread }"></div>
       <div class="wx-avatar-container" @click.stop>
-        <img
-          v-if="portraits.getUrl(name, data.性别)"
+        <PortraitImage
           :src="portraits.getUrl(name, data.性别)"
           class="portrait-img"
           :alt="name"
-          @click="ui.openImageModal(portraits.getUrl(name, data.性别))"
+          fit="cover"
+          compact
+          :fallback-label="name.slice(0, 1) || '?'"
+          :retry-key="portraits.revision"
+          @activate="ui.openImageModal(portraits.getUrl(name, data.性别))"
         />
-        <div v-else class="portrait-img dy-jade-avatar-fallback">?</div>
         <button class="wx-avatar-custom-btn" type="button" title="自定义头像" @click="ui.openPortraitEditor(name)">🎨设置</button>
       </div>
       <div class="wx-list-info">

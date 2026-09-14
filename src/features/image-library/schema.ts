@@ -20,7 +20,7 @@ export function parseImageLibrary(raw: unknown): ParsedImageLibrary {
   if (Number(source.schemaVersion) !== SUPPORTED_IMAGE_SCHEMA_VERSION) throw new Error(`不支持的图片库版本：${String(source.schemaVersion ?? "缺失")}`);
   const entitiesSource = record(record(source.data)?.entities);
   if (!entitiesSource) throw new Error("图片库缺少 data.entities");
-  const entities: Record<string, ImageLibraryEntity> = {};
+  const entityEntries: Array<[string, ImageLibraryEntity]> = [];
   for (const [rawName, rawEntity] of Object.entries(entitiesSource)) {
     const name = rawName.trim();
     const entity = record(rawEntity);
@@ -28,8 +28,20 @@ export function parseImageLibrary(raw: unknown): ParsedImageLibrary {
     const type = String(entity.type ?? "") as ImageLibraryEntity["type"];
     if (!SUPPORTED_ENTITY_TYPES.has(type)) throw new Error(`实体“${name}”的 type 无效：${type || "缺失"}`);
     if (!Array.isArray(entity.images)) throw new Error(`实体“${name}”的 images 不是数组`);
-    entities[name] = { ...entity, type, images: entity.images.map((image, index) => normalizeImage(image, name, index)) };
+    entityEntries.push([
+      name,
+      {
+        ...entity,
+        type,
+        images: entity.images.map((image, index) =>
+          normalizeImage(image, name, index),
+        ),
+      },
+    ]);
   }
-  if (!Object.keys(entities).length) throw new Error("图片库没有实体数据");
+  if (!entityEntries.length) throw new Error("图片库没有实体数据");
+  // Object.fromEntries defines data properties for names such as "__proto__";
+  // direct assignment to a normal object would instead mutate its prototype.
+  const entities = Object.fromEntries(entityEntries);
   return { schemaVersion: SUPPORTED_IMAGE_SCHEMA_VERSION, data: { entities } };
 }

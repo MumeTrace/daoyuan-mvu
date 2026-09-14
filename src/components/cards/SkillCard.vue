@@ -6,14 +6,27 @@ import ProgressTooltip from "../shared/ProgressTooltip.vue";
 import { text } from "../tabs/view-helpers";
 
 const props = defineProps<{ name: string; data: DataRecord }>();
+const ranks = ["天", "地", "玄", "黄", "凡"] as const;
+const rankClasses: Partial<Record<(typeof ranks)[number], string>> = {
+  天: "rank-heaven",
+  地: "rank-earth",
+  玄: "rank-mystic",
+  黄: "rank-yellow",
+};
 const rank = computed(() => {
-  const source = `${text(props.data.类型, "")}${props.name}${text(props.data.境界, "")}`;
-  for (const candidate of ["天", "地", "玄", "黄", "凡"]) {
-    if (source.includes(candidate)) return candidate;
-  }
-  return "";
+  const type = text(props.data.类型, "");
+  const typeRank = ranks.find((candidate) => type.includes(candidate));
+  if (typeRank) return typeRank;
+
+  const nameAndRealm = `${props.name}${text(props.data.境界, "")}`;
+  const explicitRank = ranks.find(
+    (candidate) => nameAndRealm.includes(`${candidate}阶`) || nameAndRealm.includes(`${candidate}品`),
+  );
+  if (explicitRank) return explicitRank;
+
+  return ranks.find((candidate) => props.name.includes(candidate)) ?? "";
 });
-const rankClass = computed(() => ({ 天: "rank-heaven", 地: "rank-earth", 玄: "rank-mystic", 黄: "rank-yellow" })[rank.value] || "");
+const rankClass = computed(() => rank.value ? rankClasses[rank.value] ?? "" : "");
 </script>
 
 <template>

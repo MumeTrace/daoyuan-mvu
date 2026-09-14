@@ -71,9 +71,6 @@ const bootstrapSource = String.raw`
   [
     "getLastMessageId",
     "getChatMessages",
-    "getVariables",
-    "replaceVariables",
-    "updateVariablesWith",
     "getLorebookEntries",
     "getOrCreateChatLorebook",
     "getCurrentCharPrimaryLorebook",
@@ -310,6 +307,9 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   }
 
   const floatingStorageMemory = new Map();
+  const floatingStorageVolatileKeys = new Set();
+  const floatingStorageRemovedKeys = new Set();
+  let floatingStorageVolatileClear = false;
 
   function getTavernStorage() {
     try {
@@ -328,6 +328,17 @@ function floatingMvuRuntime(uiHtml, petAssets) {
   const sharedStatusStorage = {
     getItem(key) {
       const normalizedKey = String(key);
+      if (floatingStorageVolatileKeys.has(normalizedKey)) {
+        return floatingStorageMemory.has(normalizedKey)
+          ? floatingStorageMemory.get(normalizedKey)
+          : null;
+      }
+      if (
+        floatingStorageRemovedKeys.has(normalizedKey) ||
+        floatingStorageVolatileClear
+      ) {
+        return null;
+      }
       const storage = getTavernStorage();
       if (storage) {
         try {
@@ -342,19 +353,48 @@ function floatingMvuRuntime(uiHtml, petAssets) {
     setItem(key, value) {
       const normalizedKey = String(key);
       const normalizedValue = String(value);
+      floatingStorageMemory.set(normalizedKey, normalizedValue);
+      floatingStorageVolatileKeys.add(normalizedKey);
+      floatingStorageRemovedKeys.delete(normalizedKey);
       const storage = getTavernStorage();
       if (storage) {
-        storage.setItem(normalizedKey, normalizedValue);
+        try {
+          storage.setItem(normalizedKey, normalizedValue);
+          floatingStorageVolatileKeys.delete(normalizedKey);
+        } catch (error) {
+          throw error;
+        }
       }
-      floatingStorageMemory.set(normalizedKey, normalizedValue);
     },
     removeItem(key) {
       const normalizedKey = String(key);
+      floatingStorageMemory.delete(normalizedKey);
+      floatingStorageVolatileKeys.delete(normalizedKey);
+      floatingStorageRemovedKeys.add(normalizedKey);
       const storage = getTavernStorage();
       if (storage) {
-        storage.removeItem(normalizedKey);
+        try {
+          storage.removeItem(normalizedKey);
+          floatingStorageRemovedKeys.delete(normalizedKey);
+        } catch (error) {
+          throw error;
+        }
       }
-      floatingStorageMemory.delete(normalizedKey);
+    },
+    clear() {
+      floatingStorageMemory.clear();
+      floatingStorageVolatileKeys.clear();
+      floatingStorageRemovedKeys.clear();
+      floatingStorageVolatileClear = true;
+      const storage = getTavernStorage();
+      if (storage) {
+        try {
+          storage.clear();
+          floatingStorageVolatileClear = false;
+        } catch (error) {
+          throw error;
+        }
+      }
     },
   };
 

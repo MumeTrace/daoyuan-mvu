@@ -34,5 +34,5 @@ export function usePortraitPool(name: () => string, gender: () => unknown = () =
     globalThis.removeEventListener?.("daoyuan_portraits_changed", refresh);
     globalThis.removeEventListener?.("daoyuan_images_changed", refresh);
   });
-  return { options, active, url, select, cycle, configure, showMissing, preload, refresh };
+  return { options, active, url, revision, select, cycle, configure, showMissing, preload, refresh };
 }

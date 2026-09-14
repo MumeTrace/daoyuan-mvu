@@ -6,6 +6,7 @@ import { usePortraitStore } from "../../stores/portraits";
 import { useStatusDialogStore } from "../../stores/status-dialog";
 import type { DataRecord } from "../../types/stat-data";
 import { text } from "./view-helpers";
+import PortraitImage from "../shared/PortraitImage.vue";
 
 const emit = defineEmits<{ back: [] }>();
 const jade = useJadeStore();
@@ -70,7 +71,15 @@ async function retry(messageId: string): Promise<void> {
 
 <template>
   <div id="wx-chat-view" class="wx-chat-view dy-vue-chat">
-    <div id="wx-chat-bg" class="wx-chat-bg" :style="activePortrait ? { backgroundImage: `url(${JSON.stringify(activePortrait)})` } : { backgroundImage: 'none' }"></div>
+    <div id="wx-chat-bg" class="wx-chat-bg">
+      <PortraitImage
+        :src="activePortrait"
+        :alt="jade.activeContact"
+        fit="cover"
+        fallback-label=""
+        :retry-key="portraits.revision"
+      />
+    </div>
     <div class="wx-chat-header">
       <button class="wx-back-btn" type="button" @click="emit('back')">❮ 返回</button>
       <button id="wx-chat-title" class="wx-chat-title" type="button" @click="detailOpen = !detailOpen">{{ jade.activeContact }}</button>

@@ -15,6 +15,7 @@ import {
 import type { BeautyCard, BeautyForumFloor, BeautyForumFloorStatus } from "../stores/beauty-rank";
 import ApplauseButton from "./shared/ApplauseButton.vue";
 import PortraitDrawer from "./shared/PortraitDrawer.vue";
+import PortraitImage from "./shared/PortraitImage.vue";
 
 const portraitOpen = reactive<Record<string, boolean>>({});
 const deleteTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -794,10 +795,12 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="hasPortrait(card)" class="large-portrait" :class="{ show: portraitOpen[card.name] }">
-            <img
+            <PortraitImage
               :src="portraitOpen[card.name] ? portraitUrl(card) : ''"
               :alt="card.name"
-              @click="ui.openImageModal(portraitUrl(card))"
+              :retry-key="portraitRevision"
+              fallback-label="立绘加载失败"
+              @activate="ui.openImageModal(portraitUrl(card))"
             />
           </div>
           <div

@@ -22,7 +22,8 @@ function normalizeSettings(value: unknown): JadeSettings {
 }
 
 export const useSettingsStore = defineStore("settings", () => {
-  const jade = ref<JadeSettings>(normalizeSettings(readStorageJson(JADE_SETTINGS_KEY, EMPTY_SETTINGS)));
+  let persistedJade = normalizeSettings(readStorageJson(JADE_SETTINGS_KEY, EMPTY_SETTINGS));
+  const jade = ref<JadeSettings>({ ...persistedJade });
   const presets = ref<Record<string, JadeSettings>>(
     Object.fromEntries(Object.entries(readStorageJson<Record<string, unknown>>(JADE_PRESETS_KEY, {})).map(([name, value]) => [name, normalizeSettings(value)])),
   );
@@ -33,14 +34,22 @@ export const useSettingsStore = defineStore("settings", () => {
   const debugLog = ref("");
 
   function saveJade(next: JadeSettings = jade.value): boolean {
-    jade.value = normalizeSettings(next);
-    return writeStorageJson(JADE_SETTINGS_KEY, jade.value);
+    const candidate = normalizeSettings(next);
+    if (!writeStorageJson(JADE_SETTINGS_KEY, candidate)) {
+      jade.value = { ...persistedJade };
+      return false;
+    }
+    persistedJade = { ...candidate };
+    jade.value = candidate;
+    return true;
   }
   function savePreset(name: string): boolean {
     const trimmed = name.trim();
     if (!trimmed) return false;
-    presets.value = { ...presets.value, [trimmed]: { ...jade.value } };
-    return writeStorageJson(JADE_PRESETS_KEY, presets.value);
+    const next = { ...presets.value, [trimmed]: { ...jade.value } };
+    if (!writeStorageJson(JADE_PRESETS_KEY, next)) return false;
+    presets.value = next;
+    return true;
   }
   function applyPreset(name: string): boolean {
     const preset = presets.value[name];
@@ -52,8 +61,9 @@ export const useSettingsStore = defineStore("settings", () => {
     if (!presets.value[name]) return false;
     const next = { ...presets.value };
     delete next[name];
+    if (!writeStorageJson(JADE_PRESETS_KEY, next)) return false;
     presets.value = next;
-    return writeStorageJson(JADE_PRESETS_KEY, next);
+    return true;
   }
   function saveLoreSelection(characterName: string, selection: JadeLoreSelection[]): boolean {
     if (!characterName) return false;

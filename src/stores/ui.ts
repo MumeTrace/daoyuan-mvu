@@ -12,6 +12,7 @@ export const useUiStore = defineStore("ui", () => {
   const editMode = ref(false);
   const activeTab = ref("dashboard");
   const activeModal = ref<string | null>(null);
+  const modalParents: string[] = [];
   const modalImageUrl = ref("");
   const factionTitle = ref("");
   const factionNote = ref("");
@@ -24,14 +25,24 @@ export const useUiStore = defineStore("ui", () => {
   const noticeTab = ref("版本更新");
   const jiuqiEditPath = ref<string[]>([]);
 
+  function persistPreference(key: string, value: string): void {
+    try {
+      storage.setItem(key, value);
+    } catch (error) {
+      // The storage bridge has already retained a volatile session value. UI
+      // interactions must continue even when persistence is unavailable.
+      console.warn(`[道渊] 界面偏好 ${key} 未能持久化。`, error);
+    }
+  }
+
   function setStatusBarCollapsed(value: boolean): void {
     statusBarCollapsed.value = value;
-    storage.setItem("daoyuan_bar_collapsed", String(value));
+    persistPreference("daoyuan_bar_collapsed", String(value));
   }
 
   function setActionButtonsCollapsed(value: boolean): void {
     actionButtonsCollapsed.value = value;
-    storage.setItem("daoyuan_btns_collapsed", String(value));
+    persistPreference("daoyuan_btns_collapsed", String(value));
   }
 
   function setActiveTab(tabId: string): void {
@@ -39,6 +50,13 @@ export const useUiStore = defineStore("ui", () => {
   }
 
   function setActiveModal(modalId: string | null): void {
+    modalParents.length = 0;
+    activeModal.value = modalId;
+  }
+
+  function openChildModal(modalId: string): void {
+    const parent = activeModal.value;
+    if (parent && parent !== modalId) modalParents.push(parent);
     activeModal.value = modalId;
   }
 
@@ -46,7 +64,7 @@ export const useUiStore = defineStore("ui", () => {
     const safeUrl = safeImageUrl(url);
     if (!safeUrl) return;
     modalImageUrl.value = safeUrl;
-    activeModal.value = "image";
+    openChildModal("image");
   }
 
   function openFactionModal(
@@ -59,28 +77,28 @@ export const useUiStore = defineStore("ui", () => {
     factionNote.value = note;
     factionImageUrl.value = safeImageUrl(imageUrl);
     factionContentKind.value = options.contentKind ?? "plain";
-    activeModal.value = "faction";
+    setActiveModal("faction");
   }
 
   function openPortraitEditor(name: string, theme = "default"): void {
     portraitEditorName.value = name;
     portraitEditorTheme.value = theme || "default";
-    activeModal.value = "portrait-editor";
+    setActiveModal("portrait-editor");
   }
 
   function openMissingPortrait(name: string, theme = "default"): void {
     portraitMissingName.value = name;
     portraitMissingTheme.value = theme || "default";
-    activeModal.value = "portrait-missing";
+    setActiveModal("portrait-missing");
   }
 
   function openNotice(tab = "版本更新"): void {
     noticeTab.value = tab;
-    activeModal.value = "notice";
+    setActiveModal("notice");
   }
 
   function closeModal(): void {
-    activeModal.value = null;
+    activeModal.value = modalParents.pop() ?? null;
   }
 
   function requestEditMode(heroName: string): void {
@@ -89,19 +107,19 @@ export const useUiStore = defineStore("ui", () => {
       return;
     }
     const remembered = storage.getItem(`jiuqi_story_seen_${heroName || "default"}`) === "true";
-    if (!remembered) activeModal.value = "jiuqi-story";
+    if (!remembered) setActiveModal("jiuqi-story");
     else editMode.value = true;
   }
 
   function completeJiuqiStory(heroName: string): void {
-    storage.setItem(`jiuqi_story_seen_${heroName || "default"}`, "true");
+    persistPreference(`jiuqi_story_seen_${heroName || "default"}`, "true");
     editMode.value = true;
-    activeModal.value = null;
+    setActiveModal(null);
   }
 
   function openJiuqiEditor(path: string[]): void {
     jiuqiEditPath.value = [...path];
-    activeModal.value = "jiuqi-edit";
+    openChildModal("jiuqi-edit");
   }
 
   return {

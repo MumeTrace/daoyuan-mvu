@@ -46,6 +46,8 @@ function validateFloatingSources() {
     "iframeEvents",
     "__daoyuanFloatingTeardown",
     "Function.prototype.bind.call",
+    "floatingStorageVolatileKeys",
+    "floatingStorageVolatileClear",
   ].filter(marker => !source.includes(marker));
   if (requiredBridgeMarkers.length > 0) {
     throw new Error(`Floating sources are missing bridge markers: ${requiredBridgeMarkers.join(", ")}`);
@@ -56,7 +58,73 @@ function validateFloatingSources() {
   if (!bootstrapMatch) {
     throw new Error("Floating child bootstrap source could not be located");
   }
+  const childApiMatch = bootstrapMatch[1].match(
+    /\[\s*("getLastMessageId"[\s\S]*?)\]\s*\.forEach\(name\s*=>/,
+  );
+  const parentApiMatch = buildSource.match(
+    /const apiNames = \[([\s\S]*?)\];\s*\n\s*const api = Object\.fromEntries/,
+  );
+  if (!childApiMatch || !parentApiMatch) {
+    throw new Error("Floating API forwarding lists could not be located");
+  }
+  const namesFrom = value => [...value.matchAll(/"([^"]+)"/g)].map(match => match[1]);
+  const childApiNames = namesFrom(childApiMatch[1]);
+  const expectedChildApiNames = namesFrom(parentApiMatch[1]).filter(name => name !== "eventEmit");
+  if (JSON.stringify(childApiNames) !== JSON.stringify(expectedChildApiNames)) {
+    throw new Error("Floating child API declarations do not match the parent bridge whitelist");
+  }
+  const obsoleteVariableApis = [
+    "getVariables",
+    "replaceVariables",
+    "updateVariablesWith",
+  ].filter(name => childApiNames.includes(name));
+  if (obsoleteVariableApis.length > 0) {
+    throw new Error(`Floating child still declares unforwarded variable APIs: ${obsoleteVariableApis.join(", ")}`);
+  }
   new vm.Script(bootstrapMatch[1], { filename: "floating-child-bootstrap.js" });
+
+  const storageMatch = buildSource.match(
+    /(const floatingStorageMemory = new Map\(\);[\s\S]*?)(?=\n\s*function listen\()/,
+  );
+  if (!storageMatch) {
+    throw new Error("Floating parent storage source could not be located");
+  }
+  const backing = new Map([
+    ["remove-me", "stale"],
+    ["after-clear", "stale"],
+  ]);
+  const storageError = new Error("read-only storage");
+  const sandbox = {
+    tavernWindow: {
+      localStorage: {
+        getItem(key) { return backing.get(String(key)) ?? null; },
+        setItem() { throw storageError; },
+        removeItem() { throw storageError; },
+        clear() { throw storageError; },
+      },
+    },
+  };
+  vm.runInNewContext(
+    `{ ${storageMatch[1]} globalThis.__floatingStorageForTest = sharedStatusStorage; }`,
+    sandbox,
+    { filename: "floating-parent-storage.js" },
+  );
+  const storage = sandbox.__floatingStorageForTest;
+  let setFailed = false;
+  try { storage.setItem("volatile", "new"); } catch { setFailed = true; }
+  if (!setFailed || storage.getItem("volatile") !== "new") {
+    throw new Error("Floating storage did not retain a failed write as volatile data");
+  }
+  let removeFailed = false;
+  try { storage.removeItem("remove-me"); } catch { removeFailed = true; }
+  if (!removeFailed || storage.getItem("remove-me") !== null) {
+    throw new Error("Floating storage did not retain a failed remove as a tombstone");
+  }
+  let clearFailed = false;
+  try { storage.clear(); } catch { clearFailed = true; }
+  if (!clearFailed || storage.getItem("after-clear") !== null) {
+    throw new Error("Floating storage did not retain a failed clear fallback");
+  }
 }
 
 console.log(`[道渊构建] target=${buildTarget} step=${sourceOnly ? "bridge-source-validate" : "artifact-validate"}`);

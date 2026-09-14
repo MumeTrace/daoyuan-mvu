@@ -55,12 +55,20 @@ export const useNoticeStore = defineStore("notice", () => {
   function markVersionRead(): void {
     if (!version.value) return;
     versionRead.value = version.value;
-    storage.setItem(VERSION_READ_KEY, version.value);
+    try {
+      storage.setItem(VERSION_READ_KEY, version.value);
+    } catch (error) {
+      console.warn("[道渊] 公告版本已读状态未能持久化。", error);
+    }
   }
   function markPortraitRead(): void {
     if (!portraitUpdate.value) return;
     portraitRead.value = portraitUpdate.value;
-    storage.setItem(PORTRAIT_READ_KEY, portraitUpdate.value);
+    try {
+      storage.setItem(PORTRAIT_READ_KEY, portraitUpdate.value);
+    } catch (error) {
+      console.warn("[道渊] 图片库公告已读状态未能持久化。", error);
+    }
   }
 
   return { version, date, portraitUpdate, tabs, loading, loaded, error, versionUnread, portraitUnread, hasUnread, load, markVersionRead, markPortraitRead };

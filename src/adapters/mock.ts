@@ -118,7 +118,7 @@ const mockMvuData: MvuData = {
       "当前地点": "青云宗",
       "遭遇冷却": 8,
       "动向": {
-        "宗门大比": { "状态": "进行中", "地点": "演武场", "描述": "弟子云集" }
+        "宗门大比": { "阶段": "承", "状态": "承", "地点": "演武场", "描述": "弟子云集" }
       }
     },
     "玉简": {
@@ -191,8 +191,10 @@ window.getCurrentCharPrimaryLorebook = async function (): Promise<string> {
   return "模拟角色世界书";
 };
 
-window.getCharLorebooks = function () {
-  return { primary: "模拟角色世界书", additional: ["模拟附加世界书"] };
+window.getCharLorebooks = function (options = {}) {
+  if (options.type === "primary") return ["模拟角色世界书"];
+  if (options.type === "additional") return ["模拟附加世界书"];
+  return ["模拟角色世界书", "模拟附加世界书"];
 };
 
 window.getCharWorldbookNames = function () {

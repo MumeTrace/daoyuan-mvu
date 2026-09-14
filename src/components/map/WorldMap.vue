@@ -48,7 +48,13 @@ function toggle3d(): void {
 }
 
 function confirm3d(): void {
-  if (rememberWarning.value) storage.setItem("dy_map3d_warned", "1");
+  if (rememberWarning.value) {
+    try {
+      storage.setItem("dy_map3d_warned", "1");
+    } catch (error) {
+      console.warn("[道渊] 3D 舆图提醒偏好未能持久化。", error);
+    }
+  }
   warningOpen.value = false;
   show3d.value = true;
   show2d.value = false;

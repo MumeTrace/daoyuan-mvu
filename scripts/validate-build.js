@@ -15,13 +15,113 @@ const regexJsonPath = path.join(projectRoot, `dist/regex-${target}.json`);
 const viteConfigPath = path.join(projectRoot, "vite.config.ts");
 const shujukuAdapterPath = path.join(projectRoot, "src/shujuku-adapter.ts");
 const shujukuBridgePath = path.join(projectRoot, "src/bridge/shujuku-api.ts");
+const lorebookBridgePath = path.join(projectRoot, "src/bridge/lorebook-api.ts");
+const storageRuntimePath = path.join(projectRoot, "src/bridge/storage-runtime.ts");
 const mvuWritePath = path.join(projectRoot, "src/composables/useMvuWrite.ts");
 const statControllerPath = path.join(projectRoot, "src/composables/useStatData.ts");
+const shujukuTemplatePath = path.join(
+  projectRoot,
+  "legacy/shujuku/TavernDB_template_青云(1).json",
+);
 const compatibilitySourcePaths = [
   path.join(projectRoot, "src/compatibility-runtime.ts"),
 ];
 const forbiddenEntityLiterals = ["&amp;", "&quot;", "&lt;", "&gt;"];
 const sourceOnly = process.argv.includes("--source-only");
+
+async function validateStorageFallback() {
+  const originalSource = fs.readFileSync(storageRuntimePath, "utf8");
+  const testSource = `${originalSource}\nglobalThis.__getDaoyuanStorageForTest = getDaoyuanStorage;`;
+  const compiled = (await transformWithEsbuild(testSource, storageRuntimePath, {
+    loader: "ts",
+    target: "es2022",
+    format: "iife",
+    minify: false,
+  })).code;
+  const backing = new Map([
+    ["remove-me", "stale"],
+    ["after-clear", "stale"],
+  ]);
+  const storageError = new Error("read-only storage");
+  const localStorage = {
+    getItem(key) { return backing.get(String(key)) ?? null; },
+    setItem() { throw storageError; },
+    removeItem() { throw storageError; },
+    clear() { throw storageError; },
+  };
+  const sandbox = { console: { warn() {} }, localStorage };
+  sandbox.window = sandbox;
+  sandbox.parent = sandbox;
+  sandbox.top = sandbox;
+  vm.runInNewContext(compiled, sandbox, { filename: "src/bridge/storage-runtime.compiled.js" });
+  const storage = sandbox.__getDaoyuanStorageForTest();
+
+  let setFailed = false;
+  try { storage.setItem("volatile", "new"); } catch { setFailed = true; }
+  if (!setFailed || storage.getItem("volatile") !== "new") {
+    throw new Error("Runtime storage does not retain a failed write as an explicit volatile fallback");
+  }
+  let removeFailed = false;
+  try { storage.removeItem("remove-me"); } catch { removeFailed = true; }
+  if (!removeFailed || storage.getItem("remove-me") !== null) {
+    throw new Error("Runtime storage does not retain a failed remove as a volatile tombstone");
+  }
+  let clearFailed = false;
+  try { storage.clear(); } catch { clearFailed = true; }
+  if (!clearFailed || storage.getItem("after-clear") !== null) {
+    throw new Error("Runtime storage does not retain a failed clear as a volatile fallback");
+  }
+
+  const injectedStorage = sandbox.__getDaoyuanStorageForTest(() => ({ localStorage }));
+  let injectedSetFailed = false;
+  try { injectedStorage.setItem("injected", "new"); } catch { injectedSetFailed = true; }
+  if (!injectedSetFailed || injectedStorage.getItem("injected") !== "new") {
+    throw new Error("Injected runtime storage bypasses the volatile write fallback");
+  }
+}
+
+async function validateLorebookFallback() {
+  const originalSource = fs.readFileSync(lorebookBridgePath, "utf8");
+  const testSource = `${originalSource.replace(
+    'import { requireCapability } from "./errors";',
+    'function requireCapability(value, name) { if (typeof value !== "function") throw new Error(name); return value; }',
+  )}\nglobalThis.__createLorebookApiForTest = createLorebookApi;`;
+  const compiled = (await transformWithEsbuild(testSource, lorebookBridgePath, {
+    loader: "ts",
+    target: "es2022",
+    format: "iife",
+    minify: false,
+  })).code;
+  const sandbox = { console: { warn() {} } };
+  sandbox.window = sandbox;
+  vm.runInNewContext(compiled, sandbox, { filename: "src/bridge/lorebook-api.compiled.js" });
+
+  const host = {
+    getCharWorldbookNames() { throw new Error("modern unavailable"); },
+    getCurrentCharPrimaryLorebook() { return "角色主书"; },
+    getCharLorebooks(options = {}) {
+      if (options.type === "primary") return ["角色主书"];
+      if (options.type === "additional") return ["附加甲", "附加乙"];
+      return ["角色主书", "附加甲", "附加乙"];
+    },
+    getWorldbook() { throw new Error("modern book unavailable"); },
+    getLorebookEntries() {
+      return [{ uid: 7, comment: "旧版条目", content: "内容" }];
+    },
+  };
+  const api = sandbox.__createLorebookApiForTest(() => host);
+  const characterBooks = await api.getCurrentCharacterBookNames();
+  if (
+    characterBooks.primary !== "角色主书" ||
+    JSON.stringify(characterBooks.additional) !== JSON.stringify(["附加甲", "附加乙"])
+  ) {
+    throw new Error("Lorebook bridge did not fall back from modern API to legacy array results");
+  }
+  const entries = await api.getBookEntries("角色主书");
+  if (entries.length !== 1 || entries[0].comment !== "旧版条目") {
+    throw new Error("Lorebook bridge did not fall back after getWorldbook threw");
+  }
+}
 
 async function validateAdapterSources() {
   const viteConfig = fs.readFileSync(viteConfigPath, "utf8");
@@ -85,6 +185,20 @@ async function validateAdapterSources() {
         content: [
           ["好友姓名", "性别", "境界", "关系", "好感度", "历史记录"],
           ["故人", "未知", "未知", "旧识", 1, "{}"],
+        ],
+      },
+      sheet_world: {
+        name: "世界状态表",
+        content: [
+          ["行号", "全局键", "当前时间", "当前地点", "危机程度", "遭遇冷却轮数", "动向"],
+          [1, "全局", "辰时", "青云山", "低", 8, "{}"],
+        ],
+      },
+      sheet_trends: {
+        name: "动向表",
+        content: [
+          ["行号", "动向名", "类型", "地点", "状态", "描述", "最近更新"],
+          [1, "宗门大比", "宗门事件", "演武场", "转", "局势突变", "本轮"],
         ],
       },
     };
@@ -164,6 +278,20 @@ async function validateAdapterSources() {
     if (!variables || typeof variables.stat_data !== "object") {
       throw new Error("Shujuku getAllVariables did not return a stat_data object");
     }
+    if (variables.stat_data.世界?.遭遇冷却 !== 8) {
+      throw new Error("Shujuku world-state header aliases did not expose encounter cooldown");
+    }
+    if (
+      variables.stat_data.世界?.动向?.宗门大比?.阶段 !== "转" ||
+      variables.stat_data.世界?.动向?.宗门大比?.状态 !== "转"
+    ) {
+      throw new Error("Shujuku trend status was not normalized to the stage contract");
+    }
+    tables.sheet_trends.content[0][4] = "阶段";
+    tables.sheet_trends.content[1][4] = "合";
+    if (sandbox.getAllVariables().stat_data.世界?.动向?.宗门大比?.阶段 !== "合") {
+      throw new Error("Shujuku trend stage header is not compatible with the legacy status header");
+    }
     const subscription = sandbox.DaoyuanStatusDb.subscribe(() => {});
     if (!subscription || typeof subscription.stop !== "function") {
       throw new Error("Shujuku subscribe did not return a teardown handle");
@@ -190,6 +318,33 @@ async function validateAdapterSources() {
       throw new Error("Shujuku Jade delete route failed");
     }
 
+    const fallbackBacking = new Map([
+      ["remove-me", "stale"],
+      ["after-clear", "stale"],
+    ]);
+    const storageError = new Error("read-only storage");
+    sandbox.localStorage = {
+      getItem(key) { return fallbackBacking.get(String(key)) ?? null; },
+      setItem() { throw storageError; },
+      removeItem() { throw storageError; },
+      clear() { throw storageError; },
+    };
+    let shujukuSetFailed = false;
+    try { sandbox.DaoyuanStatusStorage.setItem("volatile", "new"); } catch { shujukuSetFailed = true; }
+    if (!shujukuSetFailed || sandbox.DaoyuanStatusStorage.getItem("volatile") !== "new") {
+      throw new Error("Shujuku storage did not preserve a failed write as volatile data");
+    }
+    let shujukuRemoveFailed = false;
+    try { sandbox.DaoyuanStatusStorage.removeItem("remove-me"); } catch { shujukuRemoveFailed = true; }
+    if (!shujukuRemoveFailed || sandbox.DaoyuanStatusStorage.getItem("remove-me") !== null) {
+      throw new Error("Shujuku storage did not preserve a failed remove as a tombstone");
+    }
+    let shujukuClearFailed = false;
+    try { sandbox.DaoyuanStatusStorage.clear(); } catch { shujukuClearFailed = true; }
+    if (!shujukuClearFailed || sandbox.DaoyuanStatusStorage.getItem("after-clear") !== null) {
+      throw new Error("Shujuku storage did not preserve a failed clear fallback");
+    }
+
     const typedAdapterSources = [
       fs.readFileSync(shujukuBridgePath, "utf8"),
       fs.readFileSync(mvuWritePath, "utf8"),
@@ -205,10 +360,40 @@ async function validateAdapterSources() {
     if (requiredTypedRoutes.length > 0) {
       throw new Error(`Typed Shujuku routes are missing: ${requiredTypedRoutes.join(", ")}`);
     }
+    const statControllerSource = fs.readFileSync(statControllerPath, "utf8");
+    const scopedReadStart = statControllerSource.indexOf("function readScopedStatData");
+    const shujukuReadIndex = statControllerSource.indexOf(
+      "if (shujuku.isAvailable())",
+      scopedReadStart,
+    );
+    const mvuReadIndex = statControllerSource.indexOf(
+      "mvu.getMvuData",
+      scopedReadStart,
+    );
+    if (
+      scopedReadStart < 0 ||
+      shujukuReadIndex < scopedReadStart ||
+      mvuReadIndex < 0 ||
+      shujukuReadIndex > mvuReadIndex ||
+      !statControllerSource.includes("const fromPayload = shujuku.isAvailable()")
+    ) {
+      throw new Error("Shujuku is not the authoritative read path when MVU is also present");
+    }
+
+    const template = JSON.parse(fs.readFileSync(shujukuTemplatePath, "utf8"));
+    const worldHeaders = template.sheet_world?.content?.[0] ?? [];
+    if (
+      !worldHeaders.includes("遭遇冷却") ||
+      !String(template.sheet_world?.sourceData?.ddl ?? "").includes("encounter_cooldown")
+    ) {
+      throw new Error("Shujuku template is missing the encounter cooldown column");
+    }
   }
 }
 
 console.log(`[道渊构建] target=${target} step=${sourceOnly ? "adapter-source-validate" : "artifact-validate"}`);
+await validateStorageFallback();
+await validateLorebookFallback();
 await validateAdapterSources();
 if (sourceOnly) {
   console.log(`[道渊构建] target=${target} adapter sources validated`);

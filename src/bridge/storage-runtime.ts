@@ -3,6 +3,10 @@ import type { DaoyuanKeyValueStorage, TavernHost } from "../types/tavern";
 class MemoryStorage implements DaoyuanKeyValueStorage {
   readonly #items = new Map<string, string>();
 
+  hasItem(key: string): boolean {
+    return this.#items.has(String(key));
+  }
+
   clear(): void {
     this.#items.clear();
   }
@@ -21,7 +25,78 @@ class MemoryStorage implements DaoyuanKeyValueStorage {
 }
 
 const memoryStorage = new MemoryStorage();
+const volatileKeys = new Set<string>();
+const removedKeys = new Set<string>();
+let volatileClear = false;
+const resilientStorageCache = new WeakMap<object, DaoyuanKeyValueStorage>();
 let warnedAboutFallback = false;
+
+function withVolatileFallback(
+  backend: DaoyuanKeyValueStorage,
+): DaoyuanKeyValueStorage {
+  const cached = resilientStorageCache.get(backend as object);
+  if (cached) return cached;
+
+  const memory = new MemoryStorage();
+  const pendingWrites = new Set<string>();
+  const pendingRemovals = new Set<string>();
+  let pendingClear = false;
+  const wrapped: DaoyuanKeyValueStorage = {
+    getItem(key): string | null {
+      const normalizedKey = String(key);
+      if (
+        pendingWrites.has(normalizedKey) ||
+        (pendingClear && memory.hasItem(normalizedKey))
+      ) {
+        return memory.getItem(normalizedKey);
+      }
+      if (pendingRemovals.has(normalizedKey) || pendingClear) return null;
+      return backend.getItem(normalizedKey);
+    },
+    setItem(key, value): void {
+      const normalizedKey = String(key);
+      const normalizedValue = String(value);
+      memory.setItem(normalizedKey, normalizedValue);
+      pendingWrites.add(normalizedKey);
+      pendingRemovals.delete(normalizedKey);
+      try {
+        backend.setItem(normalizedKey, normalizedValue);
+        pendingWrites.delete(normalizedKey);
+      } catch (error) {
+        warnFallback(error);
+        throw error;
+      }
+    },
+    removeItem(key): void {
+      const normalizedKey = String(key);
+      memory.removeItem(normalizedKey);
+      pendingWrites.delete(normalizedKey);
+      pendingRemovals.add(normalizedKey);
+      try {
+        backend.removeItem(normalizedKey);
+        pendingRemovals.delete(normalizedKey);
+      } catch (error) {
+        warnFallback(error);
+        throw error;
+      }
+    },
+    clear(): void {
+      memory.clear();
+      pendingWrites.clear();
+      pendingRemovals.clear();
+      pendingClear = true;
+      try {
+        backend.clear();
+        pendingClear = false;
+      } catch (error) {
+        warnFallback(error);
+        throw error;
+      }
+    },
+  };
+  resilientStorageCache.set(backend as object, wrapped);
+  return wrapped;
+}
 
 function browserHost(): TavernHost {
   return window;
@@ -62,6 +137,13 @@ function browserStorages(): Storage[] {
 const sharedBrowserStorage: DaoyuanKeyValueStorage = {
   getItem(key): string | null {
     const normalizedKey = String(key);
+    if (
+      volatileKeys.has(normalizedKey) ||
+      (volatileClear && memoryStorage.hasItem(normalizedKey))
+    ) {
+      return memoryStorage.getItem(normalizedKey);
+    }
+    if (removedKeys.has(normalizedKey) || volatileClear) return null;
     const storages = browserStorages();
     for (const [index, storage] of storages.entries()) {
       try {
@@ -88,44 +170,77 @@ const sharedBrowserStorage: DaoyuanKeyValueStorage = {
   setItem(key, value): void {
     const normalizedKey = String(key);
     const normalizedValue = String(value);
+    memoryStorage.setItem(normalizedKey, normalizedValue);
+    volatileKeys.add(normalizedKey);
+    removedKeys.delete(normalizedKey);
     const storages = browserStorages();
-    let persisted = false;
+    let persisted = 0;
     let lastError: unknown;
     for (const storage of storages) {
       try {
         storage.setItem(normalizedKey, normalizedValue);
-        persisted = true;
+        persisted += 1;
       } catch (error) {
         lastError = error;
         // Keep trying other accessible storage scopes.
       }
     }
-    if (storages.length > 0 && !persisted) {
+    if (persisted > 0) {
+      if (persisted === storages.length) volatileKeys.delete(normalizedKey);
+      return;
+    }
+    warnFallback(lastError ?? new Error("没有可写入的浏览器存储"));
+    if (storages.length > 0) {
+      // The volatile value remains readable for this session, while the error
+      // tells callers that it was not persisted across reloads.
       throw lastError ?? new Error("浏览器存储写入失败");
     }
-    memoryStorage.setItem(normalizedKey, normalizedValue);
-    if (!persisted) warnFallback(new Error("没有可写入的浏览器存储"));
   },
   removeItem(key): void {
     const normalizedKey = String(key);
-    browserStorages().forEach((storage) => {
+    memoryStorage.removeItem(normalizedKey);
+    volatileKeys.delete(normalizedKey);
+    removedKeys.add(normalizedKey);
+    const storages = browserStorages();
+    let removed = 0;
+    let lastError: unknown;
+    storages.forEach((storage) => {
       try {
         storage.removeItem(normalizedKey);
-      } catch {
+        removed += 1;
+      } catch (error) {
+        lastError = error;
         // Keep removing from other accessible storage scopes.
       }
     });
-    memoryStorage.removeItem(normalizedKey);
+    if (removed === storages.length) removedKeys.delete(normalizedKey);
+    if (storages.length > 0 && removed === 0) {
+      warnFallback(lastError);
+      throw lastError ?? new Error("浏览器存储删除失败");
+    }
   },
   clear(): void {
-    browserStorages().forEach((storage) => {
+    memoryStorage.clear();
+    volatileKeys.clear();
+    removedKeys.clear();
+    volatileClear = true;
+    const storages = browserStorages();
+    let cleared = 0;
+    let lastError: unknown;
+    storages.forEach((storage) => {
       try {
         storage.clear();
-      } catch {
+        cleared += 1;
+      } catch (error) {
+        lastError = error;
         // Keep clearing other accessible storage scopes.
       }
     });
-    memoryStorage.clear();
+    if (cleared === storages.length && storages.length > 0) volatileClear = false;
+    if (storages.length > 0 && cleared === 0) {
+      warnFallback(lastError);
+      throw lastError ?? new Error("浏览器存储清空失败");
+    }
   },
 };
 
@@ -144,9 +259,13 @@ export function getDaoyuanStorage(
 ): DaoyuanKeyValueStorage {
   try {
     const host = getHost();
-    const storage =
-      host.DaoyuanStatusStorage ??
-      (getHost === browserHost ? sharedBrowserStorage : host.localStorage);
+    const providedStorage = host.DaoyuanStatusStorage ??
+      (getHost === browserHost ? null : host.localStorage);
+    const storage = providedStorage
+      ? withVolatileFallback(providedStorage)
+      : getHost === browserHost
+        ? sharedBrowserStorage
+        : null;
     if (!storage) return memoryStorage;
     storage.getItem("__daoyuan_storage_probe__");
     return storage;

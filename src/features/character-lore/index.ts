@@ -14,6 +14,10 @@ import {
   type CharacterSubject,
   type CharacterSubjectEvidence,
 } from "./subject";
+import {
+  collectWorkshopBookNames,
+  readWorkshopMatchedLoreEntries,
+} from "./scope";
 
 export interface CharacterLoreRecord {
   name: string;
@@ -110,17 +114,6 @@ function parseWorkshopEntryIndex(value: unknown): WorkshopEntryIndexEnvelope | n
       entries,
     },
   };
-}
-
-function workshopMatchesForEntry(
-  entry: LorebookEntry,
-  workshopEntries: readonly WorkshopEntryIndexItem[],
-): WorkshopEntryIndexItem[] {
-  const keys = new Set(entryKeys(entry).map(normalize).filter(Boolean));
-  if (!keys.size) return [];
-  return workshopEntries.filter((workshopEntry) =>
-    workshopEntry.primaryKeys.some((key) => keys.has(normalize(key))),
-  );
 }
 
 function knownCharacterNames(): string[] {
@@ -224,9 +217,11 @@ function deduplicate(records: CharacterLoreRecord[]): CharacterLoreRecord[] {
 }
 
 /**
- * Read the current card book and only those additional entries that are
- * explicitly exposed by the installed Workshop index. Scope selection and
- * character classification intentionally remain separate.
+ * Read the current card primary book plus current-character additional-book
+ * entries explicitly exposed by the installed Workshop index. getEntry()
+ * already limits its snapshot to the current role's installed and enabled
+ * Workshop content; scope selection and character classification remain
+ * separate.
  */
 async function readPermittedLoreScope(): Promise<PermittedLoreScope> {
   if (
@@ -238,14 +233,10 @@ async function readPermittedLoreScope(): Promise<PermittedLoreScope> {
 
   const books = await lorebookApi.getCurrentCharacterBookNames();
   const primary = books.primary;
-  const additional = books.additional.filter((name) => name !== primary);
-  const workshopIndexPromise = additional.length
-    ? fetchWorkshopEntryIndex(undefined, 3000)
-    : Promise.resolve(null);
-  const [rawWorkshopIndex, primaryEntries, ...additionalEntries] = await Promise.all([
-    workshopIndexPromise,
+  const attachedAdditional = books.additional.filter((name) => name !== primary);
+  const [rawWorkshopIndex, primaryEntries] = await Promise.all([
+    fetchWorkshopEntryIndex(undefined, 3000),
     primary ? lorebookApi.getBookEntries(primary).catch(() => []) : Promise.resolve([]),
-    ...additional.map((book) => lorebookApi.getBookEntries(book).catch(() => [])),
   ]);
   const workshopEntries = parseWorkshopEntryIndex(rawWorkshopIndex)?.data.entries ?? [];
   const entries: ScopedLoreEntry[] = [];
@@ -257,13 +248,24 @@ async function readPermittedLoreScope(): Promise<PermittedLoreScope> {
     }
   }
 
-  additional.forEach((bookName, bookIndex) => {
-    for (const entry of additionalEntries[bookIndex] ?? []) {
-      if (!cleanText(entry.content) || entry.enabled === false) continue;
-      for (const workshopEntry of workshopMatchesForEntry(entry, workshopEntries)) {
-        entries.push({ entry, bookName, source: "workshop", workshopEntry });
-      }
-    }
+  if (!workshopEntries.length) {
+    return { entries, knownCharacterNames: knownCharacterNames() };
+  }
+
+  const installedBookNames = collectWorkshopBookNames(
+    primary,
+    attachedAdditional,
+  );
+
+  const workshopMatches = await readWorkshopMatchedLoreEntries(
+    installedBookNames,
+    workshopEntries,
+    (bookName) => lorebookApi.getBookEntries(bookName),
+  );
+
+  workshopMatches.forEach(({ entry, bookName, workshopEntry }) => {
+    if (!cleanText(entry.content) || entry.enabled === false) return;
+    entries.push({ entry, bookName, source: "workshop", workshopEntry });
   });
 
   return { entries, knownCharacterNames: knownCharacterNames() };

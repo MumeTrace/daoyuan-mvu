@@ -15,6 +15,7 @@ import {
   type PortraitPreferences,
 } from "../features/portraits/preferences";
 import { canUsePortraitTheme } from "../features/portraits/rules";
+import { collectPortraitSearchNames } from "../features/portraits/search";
 import { getThemeUi } from "../features/portraits/theme-ui";
 import { safeImageUrl } from "../utils/safe-url";
 import { asRecord } from "./helpers";
@@ -269,12 +270,10 @@ export const usePortraitStore = defineStore("portraits", () => {
     gender: string;
     url: string;
   }> {
-    const names = [
-      ...new Set([
-        ...Object.keys(images.entities),
-        ...Object.keys(preferences.value.customImages),
-      ]),
-    ];
+    const names = collectPortraitSearchNames(
+      images.entities,
+      preferences.value.customImages,
+    );
     const matched =
       query === "随机"
         ? names.length

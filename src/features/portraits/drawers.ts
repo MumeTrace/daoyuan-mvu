@@ -144,7 +144,7 @@ export async function initializePortraitDrawers(
       "[道渊状态栏] 立绘抽屉配置缓存无效，准备重新同步:",
       error,
     );
-    clearPortraitDrawersCache();
+    try { clearPortraitDrawersCache(); } catch { /* volatile tombstone is already active */ }
   }
 
   resetThemeUiConfiguration();

@@ -54,6 +54,9 @@ interface AdapterJadeContact extends AdapterLocatedRow {
 
 (function installDaoyuanStatusStorage() {
         const memory = new Map<string, string>();
+        const volatileKeys = new Set<string>();
+        const removedKeys = new Set<string>();
+        let volatileClear = false;
 
         function roots(): Window[] {
           const values: Window[] = [window];
@@ -77,6 +80,10 @@ interface AdapterJadeContact extends AdapterLocatedRow {
         window.DaoyuanStatusStorage = {
           getItem(key) {
             const normalizedKey = String(key);
+            if (volatileKeys.has(normalizedKey)) {
+              return memory.get(normalizedKey) ?? null;
+            }
+            if (removedKeys.has(normalizedKey) || volatileClear) return null;
             const storage = backend();
             if (storage) {
               try {
@@ -89,26 +96,50 @@ interface AdapterJadeContact extends AdapterLocatedRow {
           setItem(key, value) {
             const normalizedKey = String(key);
             const normalizedValue = String(value);
+            memory.set(normalizedKey, normalizedValue);
+            volatileKeys.add(normalizedKey);
+            removedKeys.delete(normalizedKey);
             const storage = backend();
             if (storage) {
-              storage.setItem(normalizedKey, normalizedValue);
+              try {
+                storage.setItem(normalizedKey, normalizedValue);
+                volatileKeys.delete(normalizedKey);
+              } catch (error) {
+                // Keep the new value available for this session, but rethrow so
+                // callers do not mistake a volatile fallback for persistence.
+                throw error;
+              }
             }
-            memory.set(normalizedKey, normalizedValue);
           },
           removeItem(key) {
             const normalizedKey = String(key);
+            memory.delete(normalizedKey);
+            volatileKeys.delete(normalizedKey);
+            removedKeys.add(normalizedKey);
             const storage = backend();
             if (storage) {
-              storage.removeItem(normalizedKey);
+              try {
+                storage.removeItem(normalizedKey);
+                removedKeys.delete(normalizedKey);
+              } catch (error) {
+                throw error;
+              }
             }
-            memory.delete(normalizedKey);
           },
           clear() {
+            memory.clear();
+            volatileKeys.clear();
+            removedKeys.clear();
+            volatileClear = true;
             const storage = backend();
             if (storage) {
-              storage.clear();
+              try {
+                storage.clear();
+                volatileClear = false;
+              } catch (error) {
+                throw error;
+              }
             }
-            memory.clear();
           },
         };
       })();
@@ -482,6 +513,29 @@ window.getAllVariables = function(): AdapterVariables {
     }
   }
 
+  function cellByHeader(row: AdapterRow, headers: AdapterRow, aliases: string[]): unknown {
+    for (var i = 0; i < aliases.length; i++) {
+      var columnIndex = headers.indexOf(aliases[i]);
+      if (columnIndex >= 0) return row[columnIndex];
+    }
+    return undefined;
+  }
+
+  function normalizeWorldEvents(value: unknown): AdapterRecord {
+    var source = parseObject(value);
+    var result: AdapterRecord = {};
+    Object.keys(source).forEach(function(name) {
+      var raw = source[name];
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+      var event = { ...raw } as AdapterRecord;
+      var stage = text(event['阶段'] ?? event['状态'], '起');
+      event['阶段'] = stage;
+      event['状态'] = text(event['状态'], stage);
+      result[name] = event;
+    });
+    return result;
+  }
+
   function rankSortValue(value: unknown): number {
     var raw = text(value, '').trim();
     var numeric = parseInt(raw, 10);
@@ -600,23 +654,42 @@ window.getAllVariables = function(): AdapterVariables {
     });
 
     sd.世界 = { 当前时间: '未知', 当前地点: '未知', 危机程度: '无', 动向: {} };
-    var worldRows: AdapterRow[] = [];
-    eachRow('世界状态表', function(r: AdapterRow) { if (r[1] === '全局') worldRows.push(r); });
+    var worldRows: Array<{ row: AdapterRow; headers: AdapterRow }> = [];
+    eachRow('世界状态表', function(r: AdapterRow, _rowIndex: number, headers: AdapterRow) {
+      if (text(cellByHeader(r, headers, ['全局键']), '') === '全局') {
+        worldRows.push({ row: r, headers: headers });
+      }
+    });
     if (worldRows.length) {
-      var wr = worldRows[0]!;
-      sd.世界 = { 当前时间: text(wr[2], '未知'), 当前地点: text(wr[3], '未知'), 危机程度: text(wr[4], '无'), 动向: parseObject(wr[5]) };
+      var worldRow = worldRows[0]!;
+      var wr = worldRow.row;
+      var wh = worldRow.headers;
+      sd.世界 = {
+        当前时间: text(cellByHeader(wr, wh, ['当前时间']), '未知'),
+        当前地点: text(cellByHeader(wr, wh, ['当前地点']), '未知'),
+        危机程度: text(cellByHeader(wr, wh, ['危机程度']), '无'),
+        动向: normalizeWorldEvents(cellByHeader(wr, wh, ['动向']))
+      };
+      var cooldown = cellByHeader(wr, wh, ['遭遇冷却', '遭遇冷却轮数', '冷却轮数']);
+      if (cooldown !== undefined && cooldown !== null && text(cooldown, '').trim()) {
+        var numericCooldown = parseFloat(text(cooldown));
+        sd.世界.遭遇冷却 = isNaN(numericCooldown) ? text(cooldown) : numericCooldown;
+      }
     }
 
     // 独立动向表是详细事件的唯一数据源；世界状态表的动向仅作旧数据兼容。
     sd.动向 = {};
-    eachRow('动向表', function(r: AdapterRow) {
-      if (!r[1]) return;
-      sd.动向[text(r[1])] = {
-        类型: text(r[2], '事件'),
-        地点: text(r[3], '未知'),
-        状态: text(r[4], '起'),
-        描述: text(r[5]),
-        最近更新: text(r[6])
+    eachRow('动向表', function(r: AdapterRow, _rowIndex: number, headers: AdapterRow) {
+      var name = text(cellByHeader(r, headers, ['动向名']), '');
+      if (!name) return;
+      var stage = text(cellByHeader(r, headers, ['阶段', '状态']), '起');
+      sd.动向[name] = {
+        类型: text(cellByHeader(r, headers, ['类型']), '事件'),
+        地点: text(cellByHeader(r, headers, ['地点']), '未知'),
+        阶段: stage,
+        状态: stage,
+        描述: text(cellByHeader(r, headers, ['描述'])),
+        最近更新: text(cellByHeader(r, headers, ['最近更新']))
       };
     });
     if (Object.keys(sd.动向).length > 0) sd.世界.动向 = sd.动向;

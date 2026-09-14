@@ -117,6 +117,12 @@ export function createStatDataController(
   }
 
   function readScopedStatData(): StatData | null {
+    // The Shujuku build owns its database snapshot. Never mix an MVU message
+    // read with later database writes when both globals happen to be present.
+    if (shujuku.isAvailable()) {
+      return statDataFrom(shujuku.readVariables());
+    }
+
     const currentMessageId = tavern.getCurrentMessageId();
     if (currentMessageId !== null && mvu.isAvailable()) {
       return statDataFrom(
@@ -130,9 +136,13 @@ export function createStatDataController(
 
   function refresh(payload?: unknown): boolean {
     try {
-      const fromPayload = Array.isArray(payload)
-        ? payload.map(statDataFrom).find((value) => value !== null) ?? null
-        : statDataFrom(payload);
+      // MVU events can still be visible in a Shujuku host. In that build the
+      // payload is only a refresh signal; the database remains authoritative.
+      const fromPayload = shujuku.isAvailable()
+        ? null
+        : Array.isArray(payload)
+          ? payload.map(statDataFrom).find((value) => value !== null) ?? null
+          : statDataFrom(payload);
       const nextStatData = fromPayload ?? readScopedStatData();
       if (!nextStatData) return false;
       distribute(nextStatData);

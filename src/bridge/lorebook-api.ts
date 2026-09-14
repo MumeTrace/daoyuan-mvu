@@ -67,11 +67,12 @@ function normalizeBookNames(value: unknown): string[] {
   return [...names];
 }
 
-function normalizeCharacterBookNames(value: unknown): CharacterBookNames {
+function normalizeCharacterBookNames(value: unknown): CharacterBookNames | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { primary: null, additional: [] };
+    return null;
   }
   const record = value as Record<string, unknown>;
+  if (!("primary" in record) && !("additional" in record)) return null;
   const primary = typeof record.primary === "string" && record.primary.trim()
     ? record.primary.trim()
     : null;
@@ -154,14 +155,68 @@ export function createLorebookApi(
     async getCurrentCharacterBookNames() {
       const host = getHost();
       if (typeof host.getCharWorldbookNames === "function") {
-        return normalizeCharacterBookNames(
-          await host.getCharWorldbookNames.call(host, "current"),
-        );
+        try {
+          const modern = normalizeCharacterBookNames(
+            await host.getCharWorldbookNames.call(host, "current"),
+          );
+          if (modern) return modern;
+        } catch (error) {
+          console.warn("[道渊] 现代角色世界书接口读取失败，尝试旧版接口。", error);
+        }
       }
       if (typeof host.getCharLorebooks === "function") {
-        return normalizeCharacterBookNames(
-          await host.getCharLorebooks.call(host, { type: "all" }),
-        );
+        try {
+          const allResult = await host.getCharLorebooks.call(host, {
+            type: "all",
+          });
+          const structured = normalizeCharacterBookNames(allResult);
+          if (structured) return structured;
+
+          // Historical Tavern Helper builds return string[] here rather than
+          // { primary, additional }. Resolve the primary independently so the
+          // remaining names retain their correct additional-book semantics.
+          const allNames = normalizeBookNames(allResult);
+          let primary: string | null = null;
+          if (typeof host.getCurrentCharPrimaryLorebook === "function") {
+            try {
+              const result = await host.getCurrentCharPrimaryLorebook.call(host);
+              primary = typeof result === "string" && result.trim()
+                ? result.trim()
+                : null;
+            } catch (error) {
+              console.warn("[道渊] 旧版主世界书接口读取失败，继续按列表降级。", error);
+            }
+          }
+          if (!primary) {
+            try {
+              primary = normalizeBookNames(
+                await host.getCharLorebooks.call(host, {
+                  type: "primary",
+                }),
+              )[0] ?? null;
+            } catch (error) {
+              console.warn("[道渊] 旧版主世界书列表读取失败，继续使用全部列表。", error);
+            }
+          }
+
+          let additional = allNames;
+          try {
+            const additionalResult = normalizeBookNames(
+              await host.getCharLorebooks.call(host, {
+                type: "additional",
+              }),
+            );
+            if (additionalResult.length > 0) additional = additionalResult;
+          } catch (error) {
+            console.warn("[道渊] 旧版附加世界书列表读取失败，改从全部列表区分。", error);
+          }
+          return {
+            primary,
+            additional: [...new Set(additional.filter((name) => name !== primary))],
+          };
+        } catch (error) {
+          console.warn("[道渊] 旧版角色世界书接口读取失败，尝试主世界书兜底。", error);
+        }
       }
       if (typeof host.getCurrentCharPrimaryLorebook === "function") {
         const primary = await host.getCurrentCharPrimaryLorebook.call(host);
@@ -186,7 +241,11 @@ export function createLorebookApi(
     async getBookEntries(name) {
       const host = getHost();
       if (typeof host.getWorldbook === "function") {
-        return normalizeEntries(await host.getWorldbook.call(host, name));
+        try {
+          return normalizeEntries(await host.getWorldbook.call(host, name));
+        } catch (error) {
+          console.warn(`[道渊] 现代世界书接口读取 ${name} 失败，尝试旧版接口。`, error);
+        }
       }
       if (typeof host.getLorebookEntries === "function") {
         return this.getLorebookEntries(name, {

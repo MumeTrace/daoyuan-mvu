@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { parseImageLibrary } from "../src/features/image-library/schema.ts";
 import {
   getCharacterEntity,
+  getAllCharacterNames,
+  getImageEntity,
   getSectMapImages,
   groupCharacterImagesByTheme,
 } from "../src/features/image-library/selectors.ts";
@@ -14,6 +16,10 @@ import {
   setWorkshopImageLibrary,
 } from "../src/features/image-library/store.ts";
 import { canUsePortraitTheme } from "../src/features/portraits/rules.ts";
+import {
+  collectPortraitSearchNames,
+  shouldPreserveRandomPortraitResult,
+} from "../src/features/portraits/search.ts";
 import { parsePortraitDrawers } from "../src/features/portraits/drawers.ts";
 import {
   getThemeUi,
@@ -107,6 +113,60 @@ assert.equal(
   true,
 );
 assert.equal(getSectMapImages("测试宗门")[0].url, "https://example.com/map.png");
+
+const specialNameFixture = parseImageLibrary(JSON.parse(`{
+  "schemaVersion": 2,
+  "data": {
+    "entities": {
+      "__proto__": {
+        "type": "character",
+        "images": [{ "url": "https://example.com/prototype.png", "theme": "default" }]
+      },
+      "constructor": {
+        "type": "character",
+        "images": [{ "url": "https://example.com/constructor.png", "theme": "default" }]
+      }
+    }
+  }
+}`));
+setImageLibrary(specialNameFixture, "special-name-test");
+assert.equal(Object.hasOwn(specialNameFixture.data.entities, "__proto__"), true);
+assert.equal(getImageEntity("__proto__")?.type, "character");
+assert.equal(getImageEntity("constructor")?.type, "character");
+assert.equal(getImageEntity("toString"), null);
+assert.deepEqual(getAllCharacterNames(), ["__proto__", "constructor"]);
+setImageLibrary(fixture, "test");
+
+assert.deepEqual(
+  collectPortraitSearchNames(
+    {
+      有图人物: {
+        type: "character",
+        images: [{ url: "data:image/png;base64,AA==", theme: "default" }],
+      },
+      空图人物: { type: "character", images: [] },
+      坏图人物: {
+        type: "character",
+        images: [{ url: "javascript:alert(1)", theme: "default" }],
+      },
+      地点宗门: {
+        type: "sect",
+        images: [{ url: "https://example.com/map.png", theme: "map" }],
+      },
+    },
+    {
+      自定义人物: { default: ["data:image/png;base64,AA=="] },
+      空自定义: { default: [] },
+      坏自定义: { default: ["javascript:alert(1)"] },
+      空主题自定义: { "": ["data:image/png;base64,AA=="] },
+    },
+  ),
+  ["有图人物", "自定义人物"],
+);
+assert.equal(shouldPreserveRandomPortraitResult("随机", 1), true);
+assert.equal(shouldPreserveRandomPortraitResult(" 随机 ", 2), true);
+assert.equal(shouldPreserveRandomPortraitResult("随机", 0), false);
+assert.equal(shouldPreserveRandomPortraitResult("测试人物", 1), false);
 assert.equal(
   canUsePortraitTheme("special", [{ url: "x" }], { 好感度: 90 }),
   false,
@@ -322,6 +382,10 @@ const runtimeSource = runtimeFiles
   .map((file) => fs.readFileSync(file, "utf8"))
   .join("\n");
 const portraitsSource = fs.readFileSync(runtimeFiles[0], "utf8");
+const portraitImageSource = fs.readFileSync(
+  path.join(projectRoot, "src/components/shared/PortraitImage.vue"),
+  "utf8",
+);
 for (const legacyFile of [
   "portraits.json",
   "sect-maps.json",
@@ -333,7 +397,23 @@ assert.equal(runtimeSource.includes("portrait-drawers.json"), true);
 assert.equal(runtimeSource.includes("notice.json"), true);
 assert.equal(portraitsSource.includes("...Object.keys(THEME_UI)"), false);
 assert.equal(portraitsSource.includes("persistPortraitImageUrls"), true);
+assert.equal(portraitsSource.includes("collectPortraitSearchNames"), true);
+assert.equal(portraitImageSource.includes('@error="markFailed"'), true);
+assert.equal(portraitImageSource.includes("via.placeholder.com"), false);
+for (const consumer of [
+  "src/components/shared/PortraitAvatar.vue",
+  "src/components/beauty-forum.vue",
+  "src/components/tabs/JadeListTab.vue",
+  "src/components/tabs/JadeChatView.vue",
+]) {
+  assert.equal(
+    fs.readFileSync(path.join(projectRoot, consumer), "utf8")
+      .includes("<PortraitImage"),
+    true,
+    `${consumer} should use the in-theme portrait fallback`,
+  );
+}
 
 console.log(
-  "IMAGES_SYSTEM_OK schema, entity routing, remote drawer UI, theme order, drawer visibility, special rule, quota recovery, and safe local migration",
+  "IMAGES_SYSTEM_OK schema, own-key routing, portrait search candidates, in-theme load fallback, remote drawer UI, theme order, drawer visibility, special rule, quota recovery, and safe local migration",
 );
