@@ -17,6 +17,7 @@
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json",
     "validate:adapters": "cross-env BUILD_TARGET=shujuku node scripts/validate-build.js --source-only && cross-env BUILD_TARGET=floating node scripts/validate-floating-mvu.js --source-only && node scripts/validate-character-lore.js",
     "validate:images": "node scripts/validate-images-system.js",
+    "validate:map": "node scripts/validate-world-map.js",
     "extract": "node scripts/extract.js",
     "kill": "node scripts/kill-port.js"
   },

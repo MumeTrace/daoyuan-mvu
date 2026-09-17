@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 
 export function useImageZoom() {
   const scale = ref(1);
@@ -8,9 +8,11 @@ export function useImageZoom() {
   let startX = 0;
   let startY = 0;
   let pinchDistance: number | null = null;
+  let dragWindow: Window | null = null;
   const transform = computed(() => `translate(${x.value}px, ${y.value}px) scale(${scale.value})`);
 
   function reset(): void {
+    mouseUp();
     scale.value = 1;
     x.value = 0;
     y.value = 0;
@@ -25,6 +27,10 @@ export function useImageZoom() {
 
   function mouseDown(event: MouseEvent): void {
     event.preventDefault();
+    mouseUp();
+    dragWindow = event.view ?? (event.target as Element | null)?.ownerDocument.defaultView ?? window;
+    dragWindow.addEventListener("mousemove", mouseMove);
+    dragWindow.addEventListener("mouseup", mouseUp);
     dragging.value = true;
     startX = event.clientX - x.value;
     startY = event.clientY - y.value;
@@ -38,6 +44,9 @@ export function useImageZoom() {
 
   function mouseUp(): void {
     dragging.value = false;
+    dragWindow?.removeEventListener("mousemove", mouseMove);
+    dragWindow?.removeEventListener("mouseup", mouseUp);
+    dragWindow = null;
   }
 
   function touchStart(event: TouchEvent): void {
@@ -73,14 +82,7 @@ export function useImageZoom() {
     if (event.touches.length === 0) dragging.value = false;
   }
 
-  onMounted(() => {
-    globalThis.addEventListener("mousemove", mouseMove);
-    globalThis.addEventListener("mouseup", mouseUp);
-  });
-  onBeforeUnmount(() => {
-    globalThis.removeEventListener("mousemove", mouseMove);
-    globalThis.removeEventListener("mouseup", mouseUp);
-  });
+  onBeforeUnmount(mouseUp);
 
   return { transform, reset, wheel, mouseDown, touchStart, touchMove, touchEnd };
 }

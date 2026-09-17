@@ -45,7 +45,8 @@ export function useLoreSearch() {
       .map((record) => `【${record.sourceLabel}】\n${record.content}`)
       .join("\n\n");
   }
-  async function openCharacterLore(name: string): Promise<void> {
+  async function openCharacterLore(name: string, options: { asChild?: boolean; mapContext?: boolean } = {}): Promise<void> {
+    const originRevision = ui.modalRevision;
     const warningKey = warningStorageKey();
     if (!isWarningDismissed(warningKey)) {
       const result = await statusDialog.confirmWithCheckbox(
@@ -62,20 +63,26 @@ export function useLoreSearch() {
       if (!result.confirmed) return;
       if (result.checked) dismissWarning(warningKey);
     }
+    if (options.asChild && ui.modalRevision !== originRevision) return;
     ui.openFactionModal(
       `🔮 正在探查【${name}】的天机…`,
       "正在翻阅本卡世界书与已安装的工坊扩展，请稍候…",
+      "",
+      options,
     );
+    const requestRevision = ui.modalRevision;
     try {
       const content = await findCharacterLore(name);
+      if (ui.activeModal !== "faction" || ui.modalRevision !== requestRevision) return;
       ui.openFactionModal(
         content ? `✨【${name}】· 天机命理` : `❌【${name}】`,
         content || "天机迷雾遮掩，未能在绑定的世界书中探查到此人的命理。",
         "",
-        { contentKind: content ? "lore" : "plain" },
+        { contentKind: content ? "lore" : "plain", replaceCurrent: true, mapContext: options.mapContext },
       );
     } catch (error) {
-      ui.openFactionModal("❌ 探查失败", error instanceof Error ? error.message : String(error));
+      if (ui.activeModal !== "faction" || ui.modalRevision !== requestRevision) return;
+      ui.openFactionModal("❌ 探查失败", error instanceof Error ? error.message : String(error), "", { replaceCurrent: true, mapContext: options.mapContext });
     }
   }
   return { findCharacterLore, openCharacterLore };

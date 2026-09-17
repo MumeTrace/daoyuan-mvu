@@ -2,6 +2,7 @@ import { ref } from "vue";
 import { defineStore } from "pinia";
 import { getDaoyuanStorage } from "../bridge/storage";
 import { safeImageUrl } from "../utils/safe-url";
+import type { MapLocation } from "../data/lore-xuantian";
 
 export const useUiStore = defineStore("ui", () => {
   const storage = getDaoyuanStorage();
@@ -12,12 +13,17 @@ export const useUiStore = defineStore("ui", () => {
   const editMode = ref(false);
   const activeTab = ref("dashboard");
   const activeModal = ref<string | null>(null);
-  const modalParents: string[] = [];
+  type FactionSnapshot = { title: string; note: string; image: string; portrait: string; mapContext: boolean; kind: "plain" | "lore" };
+  const modalParents: Array<{ id: string; faction?: FactionSnapshot }> = [];
+  const modalRevision = ref(0);
   const modalImageUrl = ref("");
   const factionTitle = ref("");
   const factionNote = ref("");
   const factionImageUrl = ref("");
+  const factionPortraitName = ref("");
+  const factionMapContext = ref(false);
   const factionContentKind = ref<"plain" | "lore">("plain");
+  const mapLocation = ref<MapLocation | null>(null);
   const portraitEditorName = ref("");
   const portraitEditorTheme = ref("default");
   const portraitMissingName = ref("");
@@ -50,13 +56,18 @@ export const useUiStore = defineStore("ui", () => {
   }
 
   function setActiveModal(modalId: string | null): void {
+    modalRevision.value++;
     modalParents.length = 0;
     activeModal.value = modalId;
   }
 
   function openChildModal(modalId: string): void {
     const parent = activeModal.value;
-    if (parent && parent !== modalId) modalParents.push(parent);
+    if (parent) modalParents.push({ id: parent, faction: parent === "faction" ? {
+      title: factionTitle.value, note: factionNote.value, image: factionImageUrl.value,
+      portrait: factionPortraitName.value, mapContext: factionMapContext.value, kind: factionContentKind.value,
+    } : undefined });
+    modalRevision.value++;
     activeModal.value = modalId;
   }
 
@@ -71,13 +82,22 @@ export const useUiStore = defineStore("ui", () => {
     title: string,
     note: string,
     imageUrl = "",
-    options: { contentKind?: "plain" | "lore" } = {},
+    options: { contentKind?: "plain" | "lore"; asChild?: boolean; replaceCurrent?: boolean; portraitName?: string; mapContext?: boolean } = {},
   ): void {
+    if (options.asChild) openChildModal("faction");
+    else if (options.replaceCurrent && activeModal.value === "faction") modalRevision.value++;
+    else setActiveModal("faction");
     factionTitle.value = title;
     factionNote.value = note;
     factionImageUrl.value = safeImageUrl(imageUrl);
+    factionPortraitName.value = options.portraitName ?? "";
+    factionMapContext.value = options.mapContext ?? false;
     factionContentKind.value = options.contentKind ?? "plain";
-    setActiveModal("faction");
+  }
+
+  function openMapLocation(location: MapLocation): void {
+    mapLocation.value = location;
+    setActiveModal("map-location");
   }
 
   function openPortraitEditor(name: string, theme = "default"): void {
@@ -98,7 +118,17 @@ export const useUiStore = defineStore("ui", () => {
   }
 
   function closeModal(): void {
-    activeModal.value = modalParents.pop() ?? null;
+    modalRevision.value++;
+    const parent = modalParents.pop();
+    if (parent?.faction) {
+      factionTitle.value = parent.faction.title;
+      factionNote.value = parent.faction.note;
+      factionImageUrl.value = parent.faction.image;
+      factionPortraitName.value = parent.faction.portrait;
+      factionMapContext.value = parent.faction.mapContext;
+      factionContentKind.value = parent.faction.kind;
+    }
+    activeModal.value = parent?.id ?? null;
   }
 
   function requestEditMode(heroName: string): void {
@@ -128,11 +158,15 @@ export const useUiStore = defineStore("ui", () => {
     editMode,
     activeTab,
     activeModal,
+    modalRevision,
     modalImageUrl,
     factionTitle,
     factionNote,
     factionImageUrl,
+    factionPortraitName,
+    factionMapContext,
     factionContentKind,
+    mapLocation,
     portraitEditorName,
     portraitEditorTheme,
     portraitMissingName,
@@ -145,6 +179,7 @@ export const useUiStore = defineStore("ui", () => {
     setActiveModal,
     openImageModal,
     openFactionModal,
+    openMapLocation,
     openPortraitEditor,
     openMissingPortrait,
     openNotice,

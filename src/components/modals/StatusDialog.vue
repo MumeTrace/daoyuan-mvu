@@ -18,7 +18,7 @@ watch(() => dialog.active, (active) => {
 function onKeydown(event: KeyboardEvent): void {
   if (!dialog.active) return;
   if (event.key === "Escape") dialog.cancel();
-  if (event.key === "Enter" && dialog.active.kind === "prompt" && document.activeElement === input.value) {
+  if (event.key === "Enter" && dialog.active.kind === "prompt" && (input.value?.getRootNode() as Document | ShadowRoot | undefined)?.activeElement === input.value) {
     event.preventDefault();
     dialog.accept();
   }
@@ -34,6 +34,7 @@ onBeforeUnmount(() => globalThis.removeEventListener?.("keydown", onKeydown));
     class="dy-status-dialog-overlay"
     :class="`dy-status-dialog-overlay--${dialog.active.tone}`"
     @click.self="dialog.cancel"
+    @keydown.stop="onKeydown"
   >
     <section
       ref="panel"

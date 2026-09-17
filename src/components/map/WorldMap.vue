@@ -3,15 +3,21 @@ import { computed, ref } from "vue";
 import { getDaoyuanStorage } from "../../bridge/storage";
 import { useImageLibraryStore } from "../../stores/image-library";
 import { useUiStore } from "../../stores/ui";
-import { xuantianLore, type MapLocation } from "../../data/lore-xuantian";
-import { xianjieLore } from "../../data/lore-xianjie";
-import LocationDetail from "./LocationDetail.vue";
-import MapRealm from "./MapRealm.vue";
+import type { MapFaction } from "../../data/lore-xuantian";
+import RealmAtlas from "./RealmAtlas.vue";
+import { xuantianAtlas } from "./atlas/xuantian-atlas";
+import { xianjieAtlas } from "./atlas/xianjie-atlas";
+import { useAtlasPreferences } from "./atlas/useAtlasPreferences";
+import { resolveAtlasPosition } from "./atlas/location-match";
+import { useWorldStore } from "../../stores/world";
 import { safeImageUrl, safeWebUrl } from "../../utils/safe-url";
 
 const ui = useUiStore();
 const images = useImageLibraryStore();
-const selected = ref<MapLocation | null>(null);
+const world = useWorldStore();
+const { opened, setOpened, persistenceError } = useAtlasPreferences();
+const atlases = [xuantianAtlas, xianjieAtlas];
+const position = computed(() => resolveAtlasPosition(world.currentLocation, atlases));
 const show2d = ref(false);
 const show3d = ref(false);
 const warningOpen = ref(false);
@@ -25,8 +31,8 @@ const fallbackMapImage = safeImageUrl("https://free-img.400040.xyz/4/2026/05/17/
 const mapImage = computed(() => safeImageUrl(images.getSectMapUrl("玄天界")) || fallbackMapImage);
 const map3dUrl = safeWebUrl("https://mumetrace.github.io/daoyuan-map/");
 
-function selectLocation(location: MapLocation): void {
-  selected.value = location;
+function openAtlasFaction(faction: MapFaction): void {
+  ui.openFactionModal(`【${faction.name}】`, faction.note || "暂无详细信息", images.getSectMapUrl(faction.name), { mapContext: true });
 }
 
 function toggle2d(): void {
@@ -70,7 +76,6 @@ function fullscreen(): void {
 
 <template>
   <div class="dy-world-map">
-    <div class="map-section-title dy-map-title-first">✦ 玄 天 界 ✦</div>
     <div class="dy-map-mode-row">
       <button type="button" @click="toggle2d">{{ show2d ? "[ 关闭 2D 全图 ]" : "[ 查看 2D 全图 ]" }}</button>
       <button class="dy-map-3d-button" type="button" @click="toggle3d">{{ show3d ? "[ 关闭 3D 舆图 ]" : "[ 开启 3D 舆图 ]" }}</button>
@@ -85,10 +90,9 @@ function fullscreen(): void {
       <iframe id="map-3d-iframe" ref="map3dFrame" :src="map3dUrl" title="道渊 3D 舆图"></iframe>
     </div>
 
-    <MapRealm :lore="xuantianLore" :active-name="selected?.name || ''" @select="selectLocation" />
-    <div class="map-section-title map-section-title-xian">✧ 九 天 仙 界 ✧</div>
-    <MapRealm :lore="xianjieLore" :active-name="selected?.name || ''" @select="selectLocation" />
-    <LocationDetail :location="selected" />
+    <RealmAtlas v-for="atlas in atlases" :key="atlas.id" :atlas="atlas" :opened="opened[atlas.id]" :position="position"
+      @update:opened="setOpened(atlas.id, $event)" @location="ui.openMapLocation" @faction="openAtlasFaction" />
+    <p v-if="persistenceError" class="danger-text">地图开关未能持久保存，当前会话仍保留本次选择。</p>
 
     <div v-if="warningOpen" class="luck-modal-overlay dy-map-warning-overlay" @click.self="warningOpen = false">
       <div class="luck-modal-content dy-map-warning-content">
