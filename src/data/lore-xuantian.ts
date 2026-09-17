@@ -1,4 +1,5 @@
 export interface MapFaction {
+  kind?: "guardian";
   name: string;
   type: "human" | "demon" | "monster" | "neutral" | string;
   note?: string;
@@ -62,6 +63,7 @@ export const xuantianLore: MapLore = {
             factions: [
                 {name: "太阳神宫", type: "human", note: "万丈火山之巅太阳火殿。崇拜太阳之力，体修至尊。"},
                 {name: "尸魔宗", type: "demon", note: "与中央神州交界处葬仙坡。炼化尸身，腐朽中求永生。"},
+                {name: "血神宫", type: "demon", note: "南离火洲中央猩红血海，血海海眼之上立有骸骨浮岛与十二根血色巨柱。宫主绯月统御四大血魔，修习血神经，抽魂炼血。"},
                 {name: "黑金阁", type: "demon", note: "无固定驻地地下黑市，统辖暗杀走私与情报渗透，重弱肉强食执掌地下混乱。"},
                 {name: "万魂殿", type: "demon", note: "阴风山脉万鬼窟。抽魂炼魄，炼化怨鬼壮大神识。"}
             ],
@@ -99,7 +101,7 @@ export const xuantianLore: MapLore = {
             type: "neutral",
             desc: "【极东尽头归墟之眼深处】每六十年现世三十天的上古仙界碎片。核心物品：澪之果。",
             factions: [
-                {name: "冥煞玄蛇", type: "monster", note: "守护者。"}
+                {name: "紫澪", type: "monster", kind: "guardian", note: "守护者 · 冥煞玄蛇。"}
             ],
             color: "--rare-text",
             x: 92, y: 50
@@ -110,7 +112,7 @@ export const xuantianLore: MapLore = {
             type: "blood",
             desc: "【南离火洲十万大山古战场外围】炼气期修士试炼场与坟场。核心物品：蒲灵果、玉髓芝。",
             factions: [
-                {name: "嗜血鬼藤", type: "monster", note: "守护者。"}
+                {name: "绯萝", type: "monster", kind: "guardian", note: "守护者 · 嗜血鬼藤。"}
             ],
             color: "--accent-blood",
             x: 35, y: 75
@@ -121,7 +123,7 @@ export const xuantianLore: MapLore = {
             type: "human",
             desc: "【西漠佛国叹息沙海地下千丈】上古剑宗遗址，充满庚金剑气。进入限制：元婴以下。核心物品：金灵玉髓。",
             factions: [
-                {name: "残缺剑傀", type: "monster", note: "守护者。"}
+                {name: "霜甄", type: "monster", kind: "guardian", note: "守护者 · 残缺剑傀。"}
             ],
             color: "#eccc68",
             x: 25, y: 35
@@ -132,7 +134,7 @@ export const xuantianLore: MapLore = {
             type: "neutral",
             desc: "【北冥雪原北冥黑渊极境海眼】中古大能折叠行宫，极寒幻境。进入限制：化神以下。核心物品：九曲灵参、造化青莲莲子。",
             factions: [
-                {name: "霜骨冰蛟", type: "monster", note: "守护者。"}
+                {name: "月珑", type: "monster", kind: "guardian", note: "守护者 · 霜骨冰蛟。"}
             ],
             color: "--accent-mana",
             x: 35, y: 15
@@ -143,7 +145,7 @@ export const xuantianLore: MapLore = {
             type: "neutral",
             desc: "【中央神州天陨坑上空万丈虚空夹缝】不稳定空间裂缝，存在法则碾压。进入限制：炼虚以下。核心物品：五行灵髓、虚空花。",
             factions: [
-                {name: "亚种虚空兽", type: "monster", note: "守护者。"}
+                {name: "虚渊", type: "monster", kind: "guardian", note: "守护者 · 亚种虚空兽。"}
             ],
             color: "--rare-text",
             x: 65, y: 35
@@ -154,7 +156,7 @@ export const xuantianLore: MapLore = {
             type: "neutral",
             desc: "【依附西漠佛国叹息沙海背面】高维镜像空间，方向与因果皆反。进入限制：合体以下。核心物品：空灵晶液。",
             factions: [
-                {name: "蜃灵皇残魂", type: "monster", note: "守护者。"}
+                {name: "蜃娆", type: "monster", kind: "guardian", note: "守护者 · 蜃灵皇残魂。"}
             ],
             color: "--rare-text",
             x: 10, y: 70
@@ -165,7 +167,7 @@ export const xuantianLore: MapLore = {
             type: "demon",
             desc: "【东极青木域极东九天罡风层深处】远古大能战场残块。进入限制：大乘以下。核心物品：三元归一果。",
             factions: [
-                {name: "怨念尸魔", type: "demon", note: "守护者。"}
+                {name: "幽姬", type: "demon", kind: "guardian", note: "守护者 · 怨念尸魔。"}
             ],
             color: "--accent-blood",
             x: 85, y: 15
@@ -176,7 +178,7 @@ export const xuantianLore: MapLore = {
             type: "demon",
             desc: "【南离火洲阴冥河死脉尽头】阴阳交汇处，生人禁区。核心物品：九转还魂草根须。",
             factions: [
-                {name: "渡魂诡灵", type: "demon", note: "守护者。"}
+                {name: "辛绫", type: "demon", kind: "guardian", note: "守护者 · 渡魂诡灵。"}
             ],
             color: "--accent-blood",
             x: 65, y: 90
@@ -187,7 +189,7 @@ export const xuantianLore: MapLore = {
             type: "neutral",
             desc: "【玄天界界壁护罩最深层夹缝】天道直辖，大乘期伐天之地。核心物品：玄黄之气。",
             factions: [
-                {name: "天道灾兽化身", type: "neutral", note: "守护者。"}
+                {name: "玄曦", type: "neutral", kind: "guardian", note: "守护者 · 天道灾兽化身。"}
             ],
             color: "--accent-gold",
             x: 50, y: 5
